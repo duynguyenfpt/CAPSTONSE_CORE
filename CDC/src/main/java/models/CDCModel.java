@@ -11,7 +11,7 @@ public class CDCModel {
     private String schema;
     private String value;
     private int operation;
-    private Date created;
+    private long created;
 
     public int getId() {
         return id;
@@ -77,15 +77,15 @@ public class CDCModel {
         this.operation = operation;
     }
 
-    public Date getCreated() {
+    public long getCreated() {
         return created;
     }
 
-    public void setCreated(Date created) {
+    public void setCreated(long created) {
         this.created = created;
     }
 
-    public CDCModel(int id, String database_url, String database_port, String database_name, String table_name, String schema, String value, int operation, Date created) {
+    public CDCModel(int id, String database_url, String database_port, String database_name, String table_name, String schema, String value, int operation, long created) {
         this.id = id;
         this.database_url = database_url;
         this.database_port = database_port;

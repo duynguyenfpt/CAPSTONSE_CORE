@@ -1,11 +1,7 @@
-package utils.db_utils;
+import com.google.gson.Gson;
 
 import java.sql.*;
 import java.util.ArrayList;
-
-import com.google.gson.Gson;
-import models.CDCModel;
-import org.apache.kafka.common.protocol.types.Field;
 
 public class sqlUtils {
     public static String getConnectionString(String host, String port, String db, String userName, String password) {
@@ -19,6 +15,7 @@ public class sqlUtils {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
             conn = DriverManager.getConnection(dbURL);
+            System.out.println("connected successfully");
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -91,14 +88,13 @@ public class sqlUtils {
                 database, table, host, port, database, table, operationType, valueDetail, gson.toJson(fields));
     }
 
-    public static Integer getOffsets(Connection connection, String db, String host, String port) {
-        String query = "SELECT offsets from cdc.test_offsets where `database` = ? and `host` = ? and `port` = ?";
+    public static Integer getOffsets(Connection connection, String db, String table) {
+        String query = "SELECT offsets from cdc.test_offsets where `database` = ? and `table` = ?";
         PreparedStatement prpStmt = null;
         try {
             prpStmt = connection.prepareStatement(query);
             prpStmt.setString(1, db);
-            prpStmt.setString(2, host);
-            prpStmt.setString(3, port);
+            prpStmt.setString(2, table);
             ResultSet rs = prpStmt.executeQuery();
             while (rs.next()) {
                 return rs.getInt("offsets");
@@ -123,74 +119,16 @@ public class sqlUtils {
         return null;
     }
 
-    public static ArrayList<CDCModel> getCDCs(Connection connection, int offsets, int max_id) {
-        ArrayList<CDCModel> listCDCs = new ArrayList<CDCModel>();
-        String getDataQuery = "SELECT * FROM cdc.test_cdc_detail where id > ? and id <= ?";
-        try {
-            PreparedStatement prpStmt = connection.prepareStatement(getDataQuery);
-            prpStmt.setInt(1, offsets);
-            prpStmt.setInt(2, max_id);
-            ResultSet rs = prpStmt.executeQuery();
-            while (rs.next()) {
-                listCDCs.add(
-                        new CDCModel(rs.getInt("id"), rs.getString("database_url"), rs.getString("database_port"),
-                                rs.getString("database_name"), rs.getString("table_name"), rs.getString("schema"),
-                                rs.getString("value"), rs.getInt("operation"), rs.getDate("created").getTime())
-                );
-            }
-        } catch (SQLException sqlException) {
-            sqlException.printStackTrace();
-        }
-        return listCDCs;
-    }
-
-    public static void updateOffset(Connection connection, String db, String host, String port, int offsets) {
-        String query = "update cdc.test_offsets set offsets = ? where `database` = ? and `host` = ? and `port` = ? ";
+    public static void updateOffset(Connection connection, String db, String table, int offsets) {
+        String query = "update cdc.test_offsets set offsets = ? where `database` = ? and `table` = ? ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(query);
             prpStmt.setInt(1, offsets);
             prpStmt.setString(2, db);
-            prpStmt.setString(3, host);
-            prpStmt.setString(4, port);
+            prpStmt.setString(3, table);
             prpStmt.executeUpdate();
         } catch (SQLException sqlException) {
             sqlException.printStackTrace();
         }
-    }
-
-    public static void initOffset(Connection connection, String db, String host, String port) throws SQLException {
-        // must check exist ?
-        // if not then update rather than insert
-        System.out.println("init offset");
-        //
-        String query = "insert into cdc.`test_offsets`(`database`,`offsets`,`host`,`port`) values (?,?,?,?)";
-        PreparedStatement prpStmt = connection.prepareStatement(query);
-        prpStmt.setString(1, db);
-        prpStmt.setInt(2, 0);
-        prpStmt.setString(3, host);
-        prpStmt.setString(4, port);
-        prpStmt.executeUpdate();
-    }
-
-    //
-    public static void insertJobLog(String job_id, int step_id, String step_name, int status) throws SQLException {
-        Connection connection = getConnection(getConnectionString("localhost", "3306",
-                "synchronization", "duynt", "Capstone123@"));
-        String command = "Insert into synchronization.job_log(job_id,step_id,step_name,status,number_steps,status_name) " +
-                "values (?,?,?,?,?,?)";
-        int numberSteps = 5;
-        String statusName = "Success";
-        if (status == 0) {
-            statusName = "Failed";
-        }
-
-        PreparedStatement prpStmt = connection.prepareStatement(command);
-        prpStmt.setString(1, job_id);
-        prpStmt.setInt(2, step_id);
-        prpStmt.setString(3, step_name);
-        prpStmt.setInt(4, status);
-        prpStmt.setInt(5, numberSteps);
-        prpStmt.setString(6, statusName);
-        prpStmt.executeUpdate();
     }
 }
