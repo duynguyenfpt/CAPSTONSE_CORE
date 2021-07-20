@@ -36,7 +36,9 @@ public class main {
             initialize(connection, host, port, db, table);
             // 3. init offset for checking
             sqlUtils.initOffset(configConnection, db, host, port);
-            // 4. logging
+            // 4. reset monitor
+            sqlUtils.resetMonitor(host, port, db, table, configConnection);
+            // 5. logging
             sqlUtils.insertJobLog(jobID, 1, "ingest_cdc", 1);
         } catch (SQLException sqlException) {
             sqlException.printStackTrace();

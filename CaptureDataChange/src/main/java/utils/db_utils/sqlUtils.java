@@ -188,6 +188,7 @@ public class sqlUtils {
             prpStmt.setString(1, host);
             prpStmt.setString(2, port);
             prpStmt.setString(3, db);
+            prpStmt.executeUpdate();
         }
     }
 
@@ -217,14 +218,52 @@ public class sqlUtils {
 
     }
 
-    public static void updateReady(String host, String port, String database, String tableName, Connection connection) throws SQLException {
-        String updateQuery = "UPDATE synchronization.table_monitor SET is_ready = b'1' " +
-                "WHERE host = ? and port = ? and database = ? and table = ?";
+    public static void updateReady(String host, String port, String database
+            , String tableName, Connection connection, int readiness) throws SQLException {
+        String updateQuery = String.format("UPDATE cdc.table_monitor SET is_ready = b'%d' " +
+                "WHERE host = ? and port = ? and `database` = ? and `table` = ?", readiness);
         PreparedStatement prpStmt = connection.prepareStatement(updateQuery);
         prpStmt.setString(1, host);
         prpStmt.setString(2, port);
         prpStmt.setString(3, database);
         prpStmt.setString(4, tableName);
         prpStmt.executeUpdate();
+    }
+
+    public static void updateActive(String host, String port, String database
+            , String tableName, Connection connection) throws SQLException {
+        String updateQuery = String.format("UPDATE cdc.table_monitor SET is_active = b'0' and is_ready = b'0' " +
+                "WHERE host = ? and port = ? and `database` = ? and `table` = ?");
+        PreparedStatement prpStmt = connection.prepareStatement(updateQuery);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        prpStmt.setString(3, database);
+        prpStmt.setString(4, tableName);
+        prpStmt.executeUpdate();
+    }
+
+    public static void resetMonitor(String host, String port, String database,
+                                    String table, Connection connection) throws SQLException {
+        String queryCheck = "SELECT * FROM cdc.table_monitor Where `host` = ? and `port` = ? and `database` = ? and `table` = ?";
+        PreparedStatement prpStmt = connection.prepareStatement(queryCheck);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        prpStmt.setString(3, database);
+        prpStmt.setString(4, table);
+        ResultSet rs = prpStmt.executeQuery();
+        if (rs.next()) {
+            updateActive(host, port, database, table, connection);
+        } else {
+            String insetQuery = "insert into " +
+                    "cdc.`table_monitor`(`host`,`port`,`database`,`table`, `is_active`,`is_ready`) values (?,?,?,?,?,?)";
+            PreparedStatement insertStmt = connection.prepareStatement(insetQuery);
+            insertStmt.setString(1, host);
+            insertStmt.setString(2, port);
+            insertStmt.setString(3, database);
+            insertStmt.setString(4, table);
+            insertStmt.setInt(5, 0);
+            insertStmt.setInt(6, 0);
+            insertStmt.executeUpdate();
+        }
     }
 }

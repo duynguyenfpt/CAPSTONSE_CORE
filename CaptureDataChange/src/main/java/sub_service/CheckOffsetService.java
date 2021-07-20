@@ -77,6 +77,6 @@ public class CheckOffsetService {
         // stay for student due to wrong design
         // update later
         sqlUtils.updateOffset(connection, db, host, port, max_id);
-        sqlUtils.updateReady(host, port, db, current_table, connection);
+        sqlUtils.updateReady(host, port, db, current_table, connection ,1);
     }
 }
