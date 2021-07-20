@@ -15,12 +15,9 @@ public class CheckOffsetService {
         String db = args[2];
         String username = args[3];
         String password = args[4];
-        String table = args[5];
-//        String connectionString = sqlUtils.getConnectionString(host, port, db, username, password);
-//        Connection connection = sqlUtils.getConnection(connectionString);
-        Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
-                "cdc", "duynt", "Capstone123@"));
-//        System.out.println(host + "-" + port + "-" + db + "-" + table);
+//        String table = args[5];
+        // connect to database cdc of data source
+        Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port, "cdc", username, password));
         while (true) {
             int offset = sqlUtils.getOffsets(connection, db, host, port);
             int max_id = sqlUtils.getLatestID(connection);
@@ -30,24 +27,55 @@ public class CheckOffsetService {
                 System.out.println("offsets: " + offset);
                 System.out.println("max_id: " + max_id);
                 //
-                String topicName = "develop2-" + host + "-" + port + "-" + db + "-" + table;
-                System.out.println(topicName);
-                String kafkaCluster = "localhost:9092";
                 //
                 ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(connection, offset, max_id);
                 //
-                if (!kafkaUtils.checkExistTopic(kafkaCluster, topicName)) {
-                    kafkaUtils.createTopic(kafkaCluster, topicName, 1, 1);
+                String current_table = "";
+                ArrayList current_cdcs = new ArrayList();
+                int index = 0;
+                for (CDCModel cdc : listCDCs) {
+                    String table = cdc.getTable_name();
+                    // check if current one is blank
+                    // only case is the first cdc
+                    if (current_table.equals("")) {
+                        current_table = table;
+                    }
+                    //
+                    if (!current_table.equalsIgnoreCase(table)) {
+                        //
+                        sendCDC(host, port, db, current_table, current_cdcs, max_id, connection);
+                        System.out.println(String.format("sending when index is : %s", index));
+                        // re-assign
+                        current_table = table;
+                        current_cdcs = new ArrayList();
+                    }
+                    current_cdcs.add(cdc);
+                    if (index == listCDCs.size() - 1) {
+                        // case when the last is the only one
+                        sendCDC(host, port, db, current_table, current_cdcs, max_id, connection);
+                        System.out.println(String.format("sending when index is : %s", index));
+                    }
+                    index++;
                 }
-                System.out.println("PRODUCING");
-                // publish to kafka
-                kafkaUtils.messageProducer(kafkaCluster, topicName, listCDCs);
-                // update offset
-                offset = max_id;
-                // stay for student due to wrong design
-                // update later
-                sqlUtils.updateOffset(connection, db, host, port, offset);
             }
         }
     }
+
+    public static void sendCDC(String host, String port, String db, String current_table,
+                               ArrayList<CDCModel> current_cdcs, int max_id, Connection connection) {
+        String topicName = "cdc-" + host + "-" + port + "-" + db + "-" + current_table;
+        System.out.println(topicName);
+        String kafkaCluster = "localhost:9092";
+        //
+        if (!kafkaUtils.checkExistTopic(kafkaCluster, topicName)) {
+            kafkaUtils.createTopic(kafkaCluster, topicName, 1, 1);
+        }
+        System.out.println("PRODUCING");
+        // publish to kafka
+        kafkaUtils.messageProducer(kafkaCluster, topicName, current_cdcs);
+        // stay for student due to wrong design
+        // update later
+        sqlUtils.updateOffset(connection, db, host, port, max_id);
+    }
+
 }
