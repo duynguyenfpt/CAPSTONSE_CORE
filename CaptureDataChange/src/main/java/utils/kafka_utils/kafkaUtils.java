@@ -105,8 +105,8 @@ public class kafkaUtils {
         Gson gson = new Gson();
         System.out.println(kafkaTopic);
         for (CDCModel cdcModel : listCDCs) {
-            producer.send(new ProducerRecord<String, String>(kafkaTopic, cdcModel.getDatabase_url() + "-" + cdcModel.getDatabase_port()
-                    + "-" + cdcModel.getDatabase_name() + "-" + cdcModel.getTable_name(), gson.toJson(cdcModel)));
+//            producer.send(new ProducerRecord<String, String>(kafkaTopic, cdcModel.getDatabase_url() + "-" + cdcModel.getDatabase_port()
+//                    + "-" + cdcModel.getDatabase_name() + "-" + cdcModel.getTable_name(), gson.toJson(cdcModel)));
             System.out.println("producing: " + gson.toJson(cdcModel));
         }
         producer.close();
