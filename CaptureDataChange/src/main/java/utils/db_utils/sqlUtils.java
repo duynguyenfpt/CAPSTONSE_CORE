@@ -232,7 +232,8 @@ public class sqlUtils {
 
     public static void updateActive(String host, String port, String database
             , String tableName, Connection connection) throws SQLException {
-        String updateQuery = String.format("UPDATE cdc.table_monitor SET is_active = b'0' and is_ready = b'0' " +
+        String updateQuery = String.format("UPDATE cdc.table_monitor SET is_active = b'0' " +
+                ",is_ready = b'0',latest_offset = 0 " +
                 "WHERE host = ? and port = ? and `database` = ? and `table` = ?");
         PreparedStatement prpStmt = connection.prepareStatement(updateQuery);
         prpStmt.setString(1, host);
@@ -252,10 +253,11 @@ public class sqlUtils {
         prpStmt.setString(4, table);
         ResultSet rs = prpStmt.executeQuery();
         if (rs.next()) {
+            System.out.println("HAS HAS HAS");
             updateActive(host, port, database, table, connection);
         } else {
             String insetQuery = "insert into " +
-                    "cdc.`table_monitor`(`host`,`port`,`database`,`table`, `is_active`,`is_ready`) values (?,?,?,?,?,?)";
+                    "cdc.`table_monitor`(`host`,`port`,`database`,`table`, `is_active`,`is_ready`, `latest_offdet`) values (?,?,?,?,?,?,?)";
             PreparedStatement insertStmt = connection.prepareStatement(insetQuery);
             insertStmt.setString(1, host);
             insertStmt.setString(2, port);
@@ -263,6 +265,7 @@ public class sqlUtils {
             insertStmt.setString(4, table);
             insertStmt.setInt(5, 0);
             insertStmt.setInt(6, 0);
+            insertStmt.setInt(7, 0);
             insertStmt.executeUpdate();
         }
     }
