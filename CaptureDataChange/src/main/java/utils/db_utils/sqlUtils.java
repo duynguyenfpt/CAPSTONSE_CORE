@@ -125,7 +125,9 @@ public class sqlUtils {
 
     public static ArrayList<CDCModel> getCDCs(Connection connection, int offsets, int max_id) {
         ArrayList<CDCModel> listCDCs = new ArrayList<CDCModel>();
-        String getDataQuery = "SELECT * FROM cdc.test_cdc_detail where id > ? and id <= ?";
+        String getDataQuery = "SELECT * FROM cdc.test_cdc_detail " +
+                "where id > ? and id <= ? " +
+                "order by table_name ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(getDataQuery);
             prpStmt.setInt(1, offsets);
