@@ -41,7 +41,7 @@ public class sqlUtils {
     }
 
     public static String createTrigger(Connection connection, String host, String port, String database,
-                                       String table, int operationType) {
+                                       String table, int operationType, String cdcDB, String cdcTable) {
         // set operation
         String operation = "INSERT";
         if (operationType == 2) {
@@ -55,7 +55,7 @@ public class sqlUtils {
                 "CREATE TRIGGER test_after_%s_%s_%s\n" +
                 "    AFTER %s ON %s.%s\n" +
                 "    FOR EACH ROW\n" +
-                " INSERT INTO cdc.test_cdc_detail\n" +
+                " INSERT INTO %s.%s\n" +
                 " SET\n" +
                 "  `database_url` = '%s',\n" +
                 "  `database_port` = '%s',\n" +
@@ -88,7 +88,7 @@ public class sqlUtils {
         }
         ;
         return String.format(triggerTemplate, database, table, operation, operation,
-                database, table, host, port, database, table, operationType, valueDetail, gson.toJson(fields));
+                database, table, cdcDB, cdcTable, host, port, database, table, operationType, valueDetail, gson.toJson(fields));
     }
 
     public static Integer getOffsets(Connection connection, String db, String host, String port) {
@@ -193,6 +193,21 @@ public class sqlUtils {
         prpStmt.setInt(4, status);
         prpStmt.setInt(5, numberSteps);
         prpStmt.setString(6, statusName);
+        prpStmt.executeUpdate();
+    }
+
+    public static void getTableInfo(String host, String port, String database, String tableName) {
+
+    }
+
+    public static void updateReady(String host, String port, String database, String tableName, Connection connection) throws SQLException {
+        String updateQuery = "UPDATE synchronization.table_monitor SET is_ready = b'1' " +
+                "WHERE host = ? and port = ? and database = ? and table = ?";
+        PreparedStatement prpStmt = connection.prepareStatement(updateQuery);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        prpStmt.setString(3, database);
+        prpStmt.setString(4, tableName);
         prpStmt.executeUpdate();
     }
 }

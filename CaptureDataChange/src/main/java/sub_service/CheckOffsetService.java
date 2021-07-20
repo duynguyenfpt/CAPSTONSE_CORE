@@ -6,10 +6,11 @@ import utils.db_utils.sqlUtils;
 import utils.kafka_utils.kafkaUtils;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.ArrayList;
 
 public class CheckOffsetService {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws SQLException {
         String host = args[0];
         String port = args[1];
         String db = args[2];
@@ -62,7 +63,7 @@ public class CheckOffsetService {
     }
 
     public static void sendCDC(String host, String port, String db, String current_table,
-                               ArrayList<CDCModel> current_cdcs, int max_id, Connection connection) {
+                               ArrayList<CDCModel> current_cdcs, int max_id, Connection connection) throws SQLException {
         String topicName = "cdc-" + host + "-" + port + "-" + db + "-" + current_table;
         System.out.println(topicName);
         String kafkaCluster = "localhost:9092";
@@ -76,6 +77,6 @@ public class CheckOffsetService {
         // stay for student due to wrong design
         // update later
         sqlUtils.updateOffset(connection, db, host, port, max_id);
+        sqlUtils.updateReady(host, port, db, current_table, connection);
     }
-
 }
