@@ -165,13 +165,30 @@ public class sqlUtils {
         // if not then update rather than insert
         System.out.println("init offset");
         //
-        String query = "insert into cdc.`test_offsets`(`database`,`offsets`,`host`,`port`) values (?,?,?,?)";
-        PreparedStatement prpStmt = connection.prepareStatement(query);
-        prpStmt.setString(1, db);
-        prpStmt.setInt(2, 0);
-        prpStmt.setString(3, host);
-        prpStmt.setString(4, port);
-        prpStmt.executeUpdate();
+        String queryCheck = "select * from cdc.`offsets` where database_host = ? and database_port = ? and database_name = ?";
+        PreparedStatement prpCheck = connection.prepareStatement(queryCheck);
+        prpCheck.setString(1, host);
+        prpCheck.setString(2, port);
+        prpCheck.setString(3, db);
+        ResultSet rs = prpCheck.executeQuery();
+        if (!rs.next()) {
+            //
+            String query = "insert into " +
+                    "cdc.`offsets`(`database_host`,`database_port`,`database_name`,`offsets`) values (?,?,?,?)";
+            PreparedStatement prpStmt = connection.prepareStatement(query);
+            prpStmt.setString(1, host);
+            prpStmt.setString(2, port);
+            prpStmt.setString(3, db);
+            prpStmt.setInt(4, 0);
+            prpStmt.executeUpdate();
+        } else {
+            String query = "update " +
+                    "cdc.`offsets` set `offsets` = 0 where database_host = ? and database_port = ? and database_name = ? ";
+            PreparedStatement prpStmt = connection.prepareStatement(query);
+            prpStmt.setString(1, host);
+            prpStmt.setString(2, port);
+            prpStmt.setString(3, db);
+        }
     }
 
     //

@@ -66,10 +66,10 @@ public class main {
 
     public static void initCdcAtSource(String host, String port, String database, String username, String password) throws SQLException {
         String dropDatabase = String.format("drop schema if exists %s_cdc", prefix);
-        String createDatabase = String.format("create schema %s_cdc", prefix);
+        String createDatabase = String.format("create database if not exists %s_cdc", prefix);
         String useDatabase = String.format("use %s_cdc", prefix);
         String createTable = "" +
-                "CREATE TABLE `cdc_detail` (\n" +
+                "CREATE TABLE IF NOT EXISTS `cdc_detail` (\n" +
                 "  `id` int NOT NULL AUTO_INCREMENT,\n" +
                 "  `database_url` varchar(45) DEFAULT NULL,\n" +
                 "  `database_port` varchar(6) DEFAULT NULL,\n" +
@@ -81,7 +81,7 @@ public class main {
                 "  `created` datetime DEFAULT CURRENT_TIMESTAMP,\n" +
                 "  PRIMARY KEY (`id`)\n" +
                 ") ENGINE=InnoDB AUTO_INCREMENT=36 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;";
-        ArrayList<String> list_queries = new ArrayList<String>(Arrays.asList(dropDatabase, createDatabase, useDatabase, createTable));
+        ArrayList<String> list_queries = new ArrayList<String>(Arrays.asList(createDatabase, useDatabase, createTable));
         Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port, database, username, password));
         //
         String[] message = new String[]{"DELETE SUCCESSFULLY!", "CREATE DATABASE SUCCESSFULLY"
