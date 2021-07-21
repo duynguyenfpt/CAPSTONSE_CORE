@@ -119,13 +119,16 @@ public class sqlUtils {
         return null;
     }
 
-    public static void updateOffset(Connection connection, String db, String table, int offsets) {
-        String query = "update cdc.test_offsets set offsets = ? where `database` = ? and `table` = ? ";
+    public static void updateOffset(Connection connection, String host, String port, String db, String table, int offsets) {
+        String query = "update cdc.table_monitor set latest_offset = ? where " +
+                "`database` = ? and `table` = ? and host = ? and port = ? ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(query);
             prpStmt.setInt(1, offsets);
             prpStmt.setString(2, db);
             prpStmt.setString(3, table);
+            prpStmt.setString(4, host);
+            prpStmt.setString(5, port);
             prpStmt.executeUpdate();
         } catch (SQLException sqlException) {
             sqlException.printStackTrace();
@@ -142,5 +145,24 @@ public class sqlUtils {
         prpStmt.setString(3, database);
         prpStmt.setString(4, tableName);
         prpStmt.executeUpdate();
+    }
+
+    public static int getLatestId(String host, String port, String database
+            , String tableName, Connection connection) throws SQLException {
+
+        String query = "SELECT MAX(ID) as latest_id from `cdc_4912929__cdc`.cdc_detail\n" +
+                "Where database_url = ? and database_port = ? \n" +
+                "and database_name = ? and `table_name` = ?";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        prpStmt.setString(3, database);
+        prpStmt.setString(4, tableName);
+
+        ResultSet resultSet = prpStmt.executeQuery();
+        if (resultSet.next()) {
+            return resultSet.getInt("latest_id");
+        }
+        return 0;
     }
 }

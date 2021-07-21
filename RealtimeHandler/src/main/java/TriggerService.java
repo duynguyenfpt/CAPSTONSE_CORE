@@ -147,7 +147,7 @@ public class TriggerService {
                                         .select(col("data.*"), col("operation"), col("id"));
                                 //
                                 int maxID = transformDF.agg(max(col("id")).alias("max_id")).collectAsList().get(0).getInt(0);
-                                System.out.println("max_id is : " + maxID);
+
                                 //
                                 transformDF = transformDF.drop("id");
                                 transformDF.show(false);
@@ -198,6 +198,19 @@ public class TriggerService {
 //                                }
                                 //
                                 System.out.println("done merge insert");
+                                System.out.println("max_id is : " + maxID);
+                                int latest_id = sqlUtils.getLatestId(row.getAs("server_host"), row.getAs("port"),
+                                        row.getAs("database"), row.getAs("table"), connection);
+                                System.out.println("latest_id is : " + latest_id);
+                                if (maxID < latest_id) {
+                                    sqlUtils.updateReady(row.getAs("server_host"), row.getAs("port")
+                                            , row.getAs("database"), row.getAs("table"), connection, 1);
+                                    System.out.println("updated readiness");
+                                }
+                                System.out.println("new offset is : " + (latest_offset + numberRecords));
+                                sqlUtils.updateOffset(connection, row.getAs("server_host"), row.getAs("port")
+                                        , row.getAs("database"), row.getAs("table"), (int) (latest_offset + numberRecords));
+                                System.out.println("updated offsets");
                             }
 
                         }
