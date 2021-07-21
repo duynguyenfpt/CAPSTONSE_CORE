@@ -131,4 +131,16 @@ public class sqlUtils {
             sqlException.printStackTrace();
         }
     }
+
+    public static void updateReady(String host, String port, String database
+            , String tableName, Connection connection, int readiness) throws SQLException {
+        String updateQuery = String.format("UPDATE cdc.table_monitor SET is_ready = b'%d' " +
+                "WHERE host = ? and port = ? and `database` = ? and `table` = ?", readiness);
+        PreparedStatement prpStmt = connection.prepareStatement(updateQuery);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        prpStmt.setString(3, database);
+        prpStmt.setString(4, tableName);
+        prpStmt.executeUpdate();
+    }
 }
