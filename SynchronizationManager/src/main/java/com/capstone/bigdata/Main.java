@@ -4,31 +4,32 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
+import java.sql.SQLException;
 
 import org.stringtemplate.v4.ST;
 import utils.*;
 
 public class Main {
-    public static void main(String[] args) {
-//        String host = args[0];
-//        String port = args[1];
-//        String username = args[2];
-//        String password = args[3];
-//        String dbName = args[4];
-//        String tableName = args[5];
-//        String identityId = args[6];
-//        String partitionBy = args[7];
-//        String jobID = args[8];
-        String host = "localhost";
-        String port = "3306";
-        String username = "duynt";
-        String password = "Capstone123@";
-        String tableName = "transacton";
-        String dbName = "test";
-        String identityID = "request_id";
-        String partitionBy = "request_date";
-        String jobID = "1";
+    public static void main(String[] args) throws SQLException {
+        String host = args[0];
+        String port = args[1];
+        String username = args[2];
+        String password = args[3];
+        String tableName = args[4];
+        String dbName = args[5];
+        String partitionBy = args[6];
+        String jobID = args[7];
+        int isAll = Integer.parseInt(args[8]);
+        if (isAll == 1) {
+            syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID);
+        }
+    }
+
+    public static void syncAll(String host, String port, String username, String password
+            , String tableName, String dbName, String partitionBy, String jobID) throws SQLException {
         // cdc
+        System.out.println("table is " + tableName);
+        //
         System.out.println("START INGEST CDC");
         String cdcCmd = String.format("java -cp jars/CDC-1.0-SNAPSHOT-jar-with-dependencies.jar " +
                 "com.bigdata.capstone.main %s %s %s %s %s %s %s", host, port, dbName, username, password, tableName, jobID);
@@ -42,9 +43,13 @@ public class Main {
                 "--jars jars/mysql-connector-java-8.0.25.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
                 "%s %s %s %s %s %s %s %s", dbName, tableName, username, password, host, port, partitionBy, jobID);
         System.out.println(cmd);
-        runCommand(cmd);
+//        runCommand(cmd);
         System.out.println("DONE SNAPSHOT");
-
+        System.out.println("UPDATE READINESS");
+        Connection connection = sqlUtils.getConnection(
+                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
+        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
+        System.out.println("DONE UPDATING ACTIVENESS");
     }
 
     public static void runCommand(String cmdToExecute) {

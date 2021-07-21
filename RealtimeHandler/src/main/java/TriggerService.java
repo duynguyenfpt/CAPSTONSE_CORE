@@ -147,7 +147,7 @@ public class TriggerService {
                                         .select(col("data.*"), col("operation"), col("id"));
                                 //
                                 int maxID = transformDF.agg(max(col("id")).alias("max_id")).collectAsList().get(0).getInt(0);
-                                WindowSpec windows = Window.partitionBy(row.getAs("identity_id"), "operation");
+                                WindowSpec windows = Window.partitionBy(row.getAs("identity_key"), "operation");
                                 // remove duplication operation - only get the last one
                                 transformDF = transformDF
                                         .withColumn("latest_operation", max("id").over(windows))

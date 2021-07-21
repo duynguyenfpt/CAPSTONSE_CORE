@@ -35,7 +35,7 @@ public class main {
             // 2. drop and create three type triggers - create table cdc and meta data
             initialize(connection, host, port, db, table);
             // 3. init offset for checking
-            sqlUtils.initOffset(configConnection, db, host, port);
+            sqlUtils.initOffset(configConnection, host, port);
             // 4. reset monitor
             sqlUtils.resetMonitor(host, port, db, table, configConnection);
             // 5. logging
@@ -86,7 +86,9 @@ public class main {
         ArrayList<String> list_queries = new ArrayList<String>(Arrays.asList(createDatabase, useDatabase, createTable));
         Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port, database, username, password));
         //
-        String[] message = new String[]{"DELETE SUCCESSFULLY!", "CREATE DATABASE SUCCESSFULLY"
+        String[] message = new String[]{
+//                "DELETE SUCCESSFULLY!",
+                "CREATE DATABASE SUCCESSFULLY"
                 , "USE DATABASE", "CREATED TABLE"};
         //
         int index = 0;

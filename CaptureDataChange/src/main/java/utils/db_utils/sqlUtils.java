@@ -91,18 +91,16 @@ public class sqlUtils {
                 database, table, cdcDB, cdcTable, host, port, database, table, operationType, valueDetail, gson.toJson(fields));
     }
 
-    public static Integer getOffsets(Connection connection, String db, String host, String port) {
-        String query = "SELECT offsets from cdc.offsets where `database_name` = ? " +
+    public static Integer getOffsets(Connection connection, String host, String port) {
+        String query = "SELECT offsets from cdc.offsets where " +
                 "and `database_host` = ? and `database_port` = ?";
-        System.out.println(db);
         System.out.println(host);
         System.out.println(port);
         PreparedStatement prpStmt = null;
         try {
             prpStmt = connection.prepareStatement(query);
-            prpStmt.setString(1, db);
-            prpStmt.setString(2, host);
-            prpStmt.setString(3, port);
+            prpStmt.setString(1, host);
+            prpStmt.setString(2, port);
             ResultSet rs = prpStmt.executeQuery();
             while (rs.next()) {
                 return rs.getInt("offsets");
@@ -164,34 +162,24 @@ public class sqlUtils {
         }
     }
 
-    public static void initOffset(Connection connection, String db, String host, String port) throws SQLException {
+    public static void initOffset(Connection connection, String host, String port) throws SQLException {
         // must check exist ?
         // if not then update rather than insert
         System.out.println("init offset");
         //
-        String queryCheck = "select * from cdc.`offsets` where database_host = ? and database_port = ? and database_name = ?";
+        String queryCheck = "select * from cdc.`offsets` where database_host = ? and database_port = ? ";
         PreparedStatement prpCheck = connection.prepareStatement(queryCheck);
         prpCheck.setString(1, host);
         prpCheck.setString(2, port);
-        prpCheck.setString(3, db);
         ResultSet rs = prpCheck.executeQuery();
         if (!rs.next()) {
             //
             String query = "insert into " +
-                    "cdc.`offsets`(`database_host`,`database_port`,`database_name`,`offsets`) values (?,?,?,?)";
+                    "cdc.`offsets`(`database_host`,`database_port`,`offsets`) values (?,?,?)";
             PreparedStatement prpStmt = connection.prepareStatement(query);
             prpStmt.setString(1, host);
             prpStmt.setString(2, port);
-            prpStmt.setString(3, db);
-            prpStmt.setInt(4, 0);
-            prpStmt.executeUpdate();
-        } else {
-            String query = "update " +
-                    "cdc.`offsets` set `offsets` = 0 where database_host = ? and database_port = ? and database_name = ? ";
-            PreparedStatement prpStmt = connection.prepareStatement(query);
-            prpStmt.setString(1, host);
-            prpStmt.setString(2, port);
-            prpStmt.setString(3, db);
+            prpStmt.setInt(3, 0);
             prpStmt.executeUpdate();
         }
     }
@@ -257,20 +245,19 @@ public class sqlUtils {
         prpStmt.setString(4, table);
         ResultSet rs = prpStmt.executeQuery();
         if (rs.next()) {
-            System.out.println("HAS HAS HAS");
             updateActive(host, port, database, table, connection);
         } else {
+            System.out.println("yoyoyo");
             String insetQuery = "insert into " +
-                    "cdc.`table_monitor`(`host`,`port`,`database`,`table`, `is_active`,`is_ready`, `latest_offdet`) values (?,?,?,?,?,?,?)";
+                    "cdc.`table_monitor`(`host`,`port`,`database`,`table`, `is_active`,`is_ready`, `latest_offset`) values (?,?,?,?,b'0',b'0',?)";
             PreparedStatement insertStmt = connection.prepareStatement(insetQuery);
             insertStmt.setString(1, host);
             insertStmt.setString(2, port);
             insertStmt.setString(3, database);
             insertStmt.setString(4, table);
             insertStmt.setInt(5, 0);
-            insertStmt.setInt(6, 0);
-            insertStmt.setInt(7, 0);
             insertStmt.executeUpdate();
         }
     }
+
 }
