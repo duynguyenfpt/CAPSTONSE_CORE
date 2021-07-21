@@ -10,6 +10,8 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 
 public class CheckOffsetService {
+    public static final String prefix = "cdc_4912929_";
+
     public static void main(String[] args) throws SQLException {
         String host = args[0];
         String port = args[1];
@@ -18,10 +20,16 @@ public class CheckOffsetService {
         String password = args[4];
 //        String table = args[5];
         // connect to database cdc of data source
-        Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port, "cdc", username, password));
+        String cdcDB = String.format("%s_cdc", prefix);
+        String cdcTable = "cdc_detail";
+        //
+        Connection offsetConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+                "cdc", "duynt", "Capstone123@"));
+        Connection sourceConnection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port,
+                cdcDB, username, password));
         while (true) {
-            int offset = sqlUtils.getOffsets(connection, db, host, port);
-            int max_id = sqlUtils.getLatestID(connection);
+            int offset = sqlUtils.getOffsets(offsetConnection, db, host, port);
+            int max_id = sqlUtils.getLatestID(sourceConnection);
             //
             if (offset < max_id) {
                 //
@@ -29,7 +37,7 @@ public class CheckOffsetService {
                 System.out.println("max_id: " + max_id);
                 //
                 //
-                ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(connection, offset, max_id);
+                ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(sourceConnection, offset, max_id);
                 //
                 String current_table = "";
                 ArrayList current_cdcs = new ArrayList();
@@ -44,7 +52,7 @@ public class CheckOffsetService {
                     //
                     if (!current_table.equalsIgnoreCase(table)) {
                         //
-                        sendCDC(host, port, db, current_table, current_cdcs, max_id, connection);
+                        sendCDC(host, port, db, current_table, current_cdcs, max_id, offsetConnection);
                         System.out.println(String.format("sending when index is : %s", index));
                         // re-assign
                         current_table = table;
@@ -53,7 +61,7 @@ public class CheckOffsetService {
                     current_cdcs.add(cdc);
                     if (index == listCDCs.size() - 1) {
                         // case when the last is the only one
-                        sendCDC(host, port, db, current_table, current_cdcs, max_id, connection);
+                        sendCDC(host, port, db, current_table, current_cdcs, max_id, offsetConnection);
                         System.out.println(String.format("sending when index is : %s", index));
                     }
                     index++;
@@ -77,6 +85,6 @@ public class CheckOffsetService {
         // stay for student due to wrong design
         // update later
         sqlUtils.updateOffset(connection, db, host, port, max_id);
-        sqlUtils.updateReady(host, port, db, current_table, connection ,1);
+        sqlUtils.updateReady(host, port, db, current_table, connection, 1);
     }
 }

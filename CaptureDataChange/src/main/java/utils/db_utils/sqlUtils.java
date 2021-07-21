@@ -92,7 +92,11 @@ public class sqlUtils {
     }
 
     public static Integer getOffsets(Connection connection, String db, String host, String port) {
-        String query = "SELECT offsets from cdc.test_offsets where `database` = ? and `host` = ? and `port` = ?";
+        String query = "SELECT offsets from cdc.offsets where `database_name` = ? " +
+                "and `database_host` = ? and `database_port` = ?";
+        System.out.println(db);
+        System.out.println(host);
+        System.out.println(port);
         PreparedStatement prpStmt = null;
         try {
             prpStmt = connection.prepareStatement(query);
@@ -110,7 +114,7 @@ public class sqlUtils {
     }
 
     public static Integer getLatestID(Connection connection) {
-        String query = "SELECT max(id) as max_id from cdc.test_cdc_detail";
+        String query = "SELECT max(id) as max_id from cdc_detail";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(query);
             ResultSet rs = prpStmt.executeQuery();
@@ -125,7 +129,7 @@ public class sqlUtils {
 
     public static ArrayList<CDCModel> getCDCs(Connection connection, int offsets, int max_id) {
         ArrayList<CDCModel> listCDCs = new ArrayList<CDCModel>();
-        String getDataQuery = "SELECT * FROM cdc.test_cdc_detail " +
+        String getDataQuery = "SELECT * FROM cdc_detail " +
                 "where id > ? and id <= ? " +
                 "order by table_name ";
         try {
@@ -147,7 +151,7 @@ public class sqlUtils {
     }
 
     public static void updateOffset(Connection connection, String db, String host, String port, int offsets) {
-        String query = "update cdc.test_offsets set offsets = ? where `database` = ? and `host` = ? and `port` = ? ";
+        String query = "update cdc.offsets set offsets = ? where `database_name` = ? and `database_host` = ? and `database_port` = ? ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(query);
             prpStmt.setInt(1, offsets);

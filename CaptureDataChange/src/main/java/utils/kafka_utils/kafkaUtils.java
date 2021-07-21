@@ -2,6 +2,7 @@ package utils.kafka_utils;
 
 import com.google.gson.Gson;
 import models.CDCModel;
+import models.TableMonitor;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -107,6 +108,33 @@ public class kafkaUtils {
         for (CDCModel cdcModel : listCDCs) {
 //            producer.send(new ProducerRecord<String, String>(kafkaTopic, cdcModel.getDatabase_url() + "-" + cdcModel.getDatabase_port()
 //                    + "-" + cdcModel.getDatabase_name() + "-" + cdcModel.getTable_name(), gson.toJson(cdcModel)));
+            System.out.println("producing: " + gson.toJson(cdcModel));
+        }
+        producer.close();
+        System.out.println("DONE");
+    }
+
+    public static void applicationProducer(String kafkaCluster, String kafkaTopic, ArrayList<TableMonitor> listCDCs) {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaCluster);
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        //If the request fails, the producer can automatically retry,
+        props.put(ProducerConfig.RETRIES_CONFIG, 0);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
+        //Reduce the no of requests less than 0
+        props.put(ProducerConfig.LINGER_MS_CONFIG, 1);
+        //The buffer.memory controls the total amount of memory available to the producer for buffering.
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.StringSerializer");
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.StringSerializer");
+        Producer<String, String> producer = new KafkaProducer<String, String>(props);
+        Gson gson = new Gson();
+        System.out.println(kafkaTopic);
+        for (TableMonitor cdcModel : listCDCs) {
+            producer.send(new ProducerRecord<String, String>(kafkaTopic, cdcModel.getServer_host() + "-" + cdcModel.getPort()
+                    + "-" + cdcModel.getDatabase_type() + "-" + cdcModel.getTable(), gson.toJson(cdcModel)));
             System.out.println("producing: " + gson.toJson(cdcModel));
         }
         producer.close();
