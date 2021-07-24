@@ -93,7 +93,7 @@ public class sqlUtils {
 
     public static Integer getOffsets(Connection connection, String host, String port) {
         String query = "SELECT offsets from cdc.offsets where " +
-                "and `database_host` = ? and `database_port` = ?";
+                "`database_host` = ? and `database_port` = ?";
         System.out.println(host);
         System.out.println(port);
         PreparedStatement prpStmt = null;
@@ -148,14 +148,13 @@ public class sqlUtils {
         return listCDCs;
     }
 
-    public static void updateOffset(Connection connection, String db, String host, String port, int offsets) {
-        String query = "update cdc.offsets set offsets = ? where `database_name` = ? and `database_host` = ? and `database_port` = ? ";
+    public static void updateOffset(Connection connection, String host, String port, int offsets) {
+        String query = "update cdc.offsets set offsets = ? where `database_host` = ? and `database_port` = ? ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(query);
             prpStmt.setInt(1, offsets);
-            prpStmt.setString(2, db);
-            prpStmt.setString(3, host);
-            prpStmt.setString(4, port);
+            prpStmt.setString(2, host);
+            prpStmt.setString(3, port);
             prpStmt.executeUpdate();
         } catch (SQLException sqlException) {
             sqlException.printStackTrace();

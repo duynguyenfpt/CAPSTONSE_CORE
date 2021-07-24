@@ -19,10 +19,7 @@ import scala.collection.JavaConverters;
 import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -130,6 +127,9 @@ public class TriggerService {
                                 HashMap<String, String> fieldTypeMap = new HashMap<>();
                                 while (matcher.find()) {
                                     String[] detail = matcher.group(1).split(":");
+                                    if (detail[1].equals("text")) {
+                                        detail[1] = "string";
+                                    }
                                     if (!detail[1].contains("(")) {
                                         fieldTypeMap.put(detail[0], detail[1]);
                                         listCastCols.add(String.format("cast (%s as %s) as %s", detail[0], detail[1], detail[0]));
@@ -143,16 +143,21 @@ public class TriggerService {
                                 StructType dataSchema = DataTypes.createStructType(listStructs.toArray(new StructField[listStructs.size()]));
                                 listCastCols.add("operation");
                                 Dataset<Row> transformDF = dataset1
+                                        .withColumnRenamed("id", "ssk_id")
                                         .withColumn("data", from_json(col("value").cast("string"), dataSchema))
-                                        .select(col("data.*"), col("operation"), col("id"));
+                                        .select(col("data.*"), col("operation"), col("ssk_id"));
                                 //
-                                int maxID = transformDF.agg(max(col("id")).alias("max_id")).collectAsList().get(0).getInt(0);
+                                transformDF.show();
+                                System.out.println("show max");
+                                transformDF.agg(max(col("ssk_id")).alias("max_id")).show();
+                                //
+                                int maxID = transformDF.agg(max(col("ssk_id")).alias("max_id")).collectAsList().get(0).getInt(0);
                                 WindowSpec windows = Window.partitionBy(row.getAs("identity_key"), "operation");
                                 // remove duplication operation - only get the last one
                                 transformDF = transformDF
-                                        .withColumn("latest_operation", max("id").over(windows))
-                                        .filter(expr("id = latest_operation"))
-                                        .drop("id", "latest_operation");
+                                        .withColumn("latest_operation", max("ssk_id").over(windows))
+                                        .filter(expr("ssk_id = latest_operation"))
+                                        .drop("ssk_id", "latest_operation");
                                 transformDF.show(false);
                                 // get current time
                                 String currentTime = LocalDateTime.now()
@@ -160,46 +165,64 @@ public class TriggerService {
                                 transformDF = transformDF.selectExpr(JavaConverters.asScalaIteratorConverter(listCastCols.iterator()).asScala().toSeq())
                                         .withColumn("modified", lit(currentTime));
                                 String partitionBy = row.getAs("partition_by");
-                                //
-                                String joinCondition = "";
-                                int index = 0;
-                                for (String col : partitionBy.split(",")) {
-                                    joinCondition += String.format("cdc.%s = ds.%s ", col, col);
-                                    if (index < partitionBy.split(",").length - 1) {
-                                        joinCondition += "and ";
+                                Dataset<Row> source_data = sparkSession.read().parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table"))).alias("ds");
+                                if (Objects.isNull(partitionBy) || partitionBy.equals("")) {
+                                    WindowSpec w1 = Window.partitionBy(row.<String>getAs("identity_key"));
+                                    transformDF.show(false);
+                                    source_data = source_data.withColumn("is_new", lit(0))
+                                            .unionByName(transformDF.drop("operation").withColumn("is_new", lit(1)))
+                                            .withColumn("latest_id", max("is_new").over(w1))
+                                            .filter("latest_id = is_new")
+                                            .drop("is_new", "latest_id");
+                                    source_data.write()
+                                            .mode("overwrite")
+                                            .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+                                    Dataset<Row> tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+                                    tmp.write()
+                                            .mode("overwrite")
+                                            .parquet(String.format("/user/%s/%s", row.getAs("database"), row.getAs("table")));
+                                } else {
+                                    //
+                                    String joinCondition = "";
+                                    int index = 0;
+                                    for (String col : partitionBy.split(",")) {
+                                        joinCondition += String.format("cdc.%s = ds.%s ", col, col);
+                                        if (index < partitionBy.split(",").length - 1) {
+                                            joinCondition += "and ";
+                                        }
+                                    }
+                                    System.out.println("join condition: " + joinCondition);
+                                    //
+                                    Dataset<Row> notAddDS = transformDF.filter("operation <> 1").alias("cdc");
+                                    source_data.printSchema();
+                                    notAddDS.printSchema();
+                                    // merging
+                                    WindowSpec w1 = Window.partitionBy(row.<String>getAs("identity_key"));
+                                    source_data = source_data.join(notAddDS, expr(joinCondition), "left_semi")
+                                            .select(source_data.col("*"))
+                                            .withColumn("operation", lit(null))
+                                            .unionByName(notAddDS)
+                                            .withColumn("last____time", max("modified").over(w1))
+                                            .filter(expr("modified = last____time and (operation <> 3 or operation is null)"));
+                                    //
+
+
+                                    if (source_data.count() > 0) {
+                                        source_data.show();
+                                        source_data.write()
+                                                .mode(SaveMode.Overwrite)
+                                                .partitionBy(partitionBy)
+                                                .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
+                                    }
+                                    //
+                                    System.out.println("done merge update - delete");
+                                    if (transformDF.filter("operation = 1").count() > 0) {
+                                        transformDF.filter("operation = 1").write()
+                                                .mode(SaveMode.Append)
+                                                .partitionBy(partitionBy)
+                                                .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
                                     }
                                 }
-                                System.out.println("join condition: " + joinCondition);
-                                //
-                                Dataset<Row> source_data = sparkSession.read().parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table"))).alias("ds");
-                                Dataset<Row> notAddDS = transformDF.filter("operation <> 1").alias("cdc");
-                                source_data.printSchema();
-                                notAddDS.printSchema();
-                                // merging
-                                WindowSpec w1 = Window.partitionBy(row.<String>getAs("identity_key"));
-                                source_data = source_data.join(notAddDS, expr(joinCondition), "left_semi")
-                                        .select(source_data.col("*"))
-                                        .withColumn("operation", lit(null))
-                                        .unionByName(notAddDS)
-                                        .withColumn("last____time", max("modified").over(w1))
-                                        .filter(expr("modified = last____time and (operation <> 3 or operation is null)"));
-                                //
-//                                if (source_data.count() > 0) {
-//                                    source_data.show();
-//                                    source_data.write()
-//                                            .mode(SaveMode.Overwrite)
-//                                            .partitionBy("request_date")
-//                                            .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
-//                                }
-//                                //
-//                                System.out.println("done merge update - delete");
-//                                if (transformDF.filter("operation = 1").count() > 0) {
-//                                    transformDF.filter("operation = 1").write()
-//                                            .mode(SaveMode.Append)
-//                                            .partitionBy("request_date")
-//                                            .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
-//                                }
-                                //
                                 System.out.println("done merge insert");
                                 System.out.println("max_id is : " + maxID);
                                 int latest_id = sqlUtils.getLatestId(row.getAs("server_host"), row.getAs("port"),
@@ -215,7 +238,6 @@ public class TriggerService {
                                         , row.getAs("database"), row.getAs("table"), (int) (latest_offset + numberRecords));
                                 System.out.println("updated offsets");
                             }
-
                         }
                         System.out.println("doneee");
                     }

@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 import static org.apache.spark.sql.functions.*;
 
@@ -26,9 +27,13 @@ public class SparkWriter {
             String port = args[5];
             String partitionBy = args[6];
             jobID = args[7];
+            System.out.println("pb: " + partitionBy);
+//        System.out.println(partitionBy.equals(""));
+//        System.out.println(partitionBy.equals(" "));
+//        System.out.println(Objects.isNull(partitionBy));
             SparkSession sparkSession = SparkSession
                     .builder()
-                    .appName(String.format("connect database %s and table %s to parquet", database, table))
+                    .appName(String.format("snapshot database  %s-%s-%s-%s to parquet", host, port, database, table))
                     .getOrCreate();
 
             String path = String.format("/user/test/%s/%s/", database, table);
@@ -41,12 +46,24 @@ public class SparkWriter {
                     .load()
                     .withColumn("modified", lit(currentTime));
 
-            input.write()
-                    .mode("overwrite")
-                    .partitionBy(partitionBy)
-                    .parquet(path);
+            input.show();
+            System.out.println(path);
+
+            if (!partitionBy.equals(" ")) {
+                System.out.println("do this");
+                input.write()
+                        .mode("overwrite")
+                        .partitionBy(partitionBy)
+                        .parquet(path);
+            } else {
+                System.out.println("do that");
+                input.write()
+                        .mode("overwrite")
+                        .parquet(path);
+            }
             sqlUtils.insertJobLog(jobID, 2, "snapshot_data", 1);
-        } catch (Exception exception) {
+        } catch (
+                Exception exception) {
             sqlUtils.insertJobLog(jobID, 2, "snapshot_data", 0);
             System.out.println(exception.getMessage());
         }

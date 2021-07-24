@@ -18,15 +18,22 @@ public class Main {
         String tableName = args[4];
         String dbName = args[5];
         String partitionBy = args[6];
-        String jobID = args[7];
+        if (partitionBy.equals(" ")) {
+            partitionBy = "' '";
+        }
+        int jobID = Integer.parseInt(args[7]);
         int isAll = Integer.parseInt(args[8]);
-        if (isAll == 1) {
+        if (isAll == 0) {
             syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID);
         }
     }
 
     public static void syncAll(String host, String port, String username, String password
-            , String tableName, String dbName, String partitionBy, String jobID) throws SQLException {
+            , String tableName, String dbName, String partitionBy, int jobID) throws SQLException {
+        // update job status
+        Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+                "cdc", "duynt", "Capstone123@"));
+        sqlUtils.updateJobStatus(configConnection, jobID, "processing");
         // cdc
         System.out.println("table is " + tableName);
         //
@@ -41,15 +48,16 @@ public class Main {
         String cmd = String.format("spark-submit --master yarn --class SparkWriter " +
                 "--num-executors 1 --executor-cores 2 --executor-memory 1G " +
                 "--jars jars/mysql-connector-java-8.0.25.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
-                "%s %s %s %s %s %s %s %s", dbName, tableName, username, password, host, port, partitionBy, jobID);
+                "%s %s %s %s %s %s %s %d", dbName, tableName, username, password, host, port, partitionBy, jobID);
         System.out.println(cmd);
-//        runCommand(cmd);
+        runCommand(cmd);
         System.out.println("DONE SNAPSHOT");
         System.out.println("UPDATE READINESS");
         Connection connection = sqlUtils.getConnection(
                 sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
         sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
         System.out.println("DONE UPDATING ACTIVENESS");
+        sqlUtils.updateJobStatus(configConnection, jobID, "success");
     }
 
     public static void runCommand(String cmdToExecute) {

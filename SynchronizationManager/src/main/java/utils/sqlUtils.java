@@ -47,7 +47,11 @@ public class sqlUtils {
         prpStmt.executeUpdate();
     }
 
-    public static void getJobsInfo(){
-
+    public static void updateJobStatus(Connection connection, int jobID, String status) throws SQLException {
+        String updateQuery = "UPDATE `webservice_test`.`jobs` SET `status` = ? WHERE `id` = ?;";
+        PreparedStatement preparedStatement = connection.prepareStatement(updateQuery);
+        preparedStatement.setString(1, status);
+        preparedStatement.setInt(2, jobID);
+        preparedStatement.executeUpdate();
     }
 }
