@@ -80,10 +80,6 @@ public class TriggerService {
                                             , concat_ws("-", lit("cdc"), col("server_host"), col("port"),
                                                     col("database"), col("table")));
                             //
-                            LogModel log = new LogModel(1, 1, "127.0.0.1", "3306", "test", "transaction", 1, "sync",
-                                    10, "success", "done");
-                            System.out.println(gson.toJson(log));
-                            //
                             dataset.printSchema();
                             //
                             System.out.println("Execute Distinct: " + dataset.count());
@@ -99,11 +95,7 @@ public class TriggerService {
                             for (Row row : list_request) {
                                 // start processing request
                                 // determine number steps
-                                int numberSteps = 0;
                                 String partitionBy = row.getAs("partition_by");
-                                if (partitionBy.equals("") || Objects.isNull(partitionBy)) {
-                                    numberSteps = 10;
-                                }
                                 //
                                 int latest_offset = row.getAs("latest_offset");
                                 String topic_req = row.getAs("topic");
@@ -119,9 +111,16 @@ public class TriggerService {
                                         DataTypes.createStructField("created", DataTypes.LongType, true),
                                         DataTypes.createStructField("value", DataTypes.StringType, true),
                                 });
+                                //
+                                //
+                                LogModel log = new LogModel(row.getAs("job_id"), row.getAs("str_id"),
+                                        row.getAs("server_host"), row.getAs("port"),
+                                        row.getAs("database"), row.getAs("table"), 1, "sync_all",
+                                        12, null, null);
                                 // start reading data
                                 Dataset<Row> dataset1 = null;
                                 try {
+                                    sendLogs(1, "processing", "reading from data changed", log);
                                     dataset1 = sparkSession
                                             .read()
                                             .format("kafka")
@@ -131,16 +130,23 @@ public class TriggerService {
                                             .load()
                                             .withColumn("extract", from_json(col("value").cast("string"), data_schema))
                                             .select(col("extract.*"));
+                                    sendLogs(1, "success", "done reading from data changed", log);
                                 } catch (Exception exception) {
+                                    exception.printStackTrace();
                                     String messageError = "Can't not read from kafka source !";
+                                    sendLogs(1, "fail", messageError, log);
                                     throw new Exception(messageError);
                                 }
                                 // set is ready = false
                                 try {
+                                    sendLogs(2, "processing", "update readiness", log);
                                     sqlUtils.updateReady(row.getAs("server_host"), row.getAs("port")
                                             , row.getAs("database"), row.getAs("table"), connection, 0);
-                                } catch (Exception ex) {
+                                    sendLogs(2, "success", "done update readiness", log);
+                                } catch (Exception exception) {
+                                    exception.printStackTrace();
                                     String messageError = "Can't not update readiness in config database";
+                                    sendLogs(2, "success", messageError, log);
                                     throw new Exception(messageError);
                                 }
                                 //
@@ -153,6 +159,7 @@ public class TriggerService {
                                 if (dataset1.count() > 0) {
                                     // reading table metadata
                                     try {
+                                        sendLogs(3, "processing", "reading table metadata", log);
                                         String schema = dataset1.select("schema").limit(1).collectAsList().get(0).getString(0);
                                         Pattern pattern = Pattern.compile("\"([a-z_:]+)");
                                         Matcher matcher = pattern.matcher(schema);
@@ -180,24 +187,32 @@ public class TriggerService {
                                                 .withColumn("data", from_json(col("value").cast("string"), dataSchema))
                                                 .select(col("data.*"), col("operation"), col("ssk_id"));
                                         //
-                                        transformDF.show();
-                                        System.out.println("show max");
-                                        transformDF.agg(max(col("ssk_id")).alias("max_id")).show();
+//                                        transformDF.show();
+//                                        System.out.println("show max");
+//                                        transformDF.agg(max(col("ssk_id")).alias("max_id")).show();
+                                        sendLogs(3, "success", "done reading table metadata", log);
                                     } catch (Exception exception) {
+                                        exception.printStackTrace();
                                         String messageError = "Can't not convert data type";
+                                        sendLogs(3, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                     //
                                     int maxID = 0;
                                     try {
+                                        sendLogs(4, "processing", "get max ID", log);
                                         maxID = transformDF.agg(max(col("ssk_id")).alias("max_id")).collectAsList().get(0).getInt(0);
+                                        sendLogs(4, "success", "done get max ID", log);
                                     } catch (Exception exception) {
+                                        exception.printStackTrace();
                                         String messageError = "Can't not get ID";
+                                        sendLogs(4, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                     WindowSpec windows = Window.partitionBy(row.getAs("identity_key"), "operation");
                                     // remove duplication operation - only get the last one
                                     try {
+                                        sendLogs(5, "processing", "remove duplication operations", log);
                                         transformDF = transformDF
                                                 .withColumn("latest_operation", max("ssk_id").over(windows))
                                                 .filter(expr("ssk_id = latest_operation"))
@@ -208,22 +223,30 @@ public class TriggerService {
                                                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
                                         transformDF = transformDF.selectExpr(JavaConverters.asScalaIteratorConverter(listCastCols.iterator()).asScala().toSeq())
                                                 .withColumn("modified", lit(currentTime));
+                                        sendLogs(5, "success", "done removing duplication operations", log);
                                     } catch (Exception exception) {
+                                        exception.printStackTrace();
                                         String messageError = "Can't not remove duplicates";
+                                        sendLogs(5, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
 
                                     // reading data source
                                     Dataset<Row> source_data = null;
                                     try {
+                                        sendLogs(6, "processing", "reading data source", log);
                                         source_data = sparkSession.read().parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table"))).alias("ds");
+                                        sendLogs(6, "success", "done reading data source", log);
                                     } catch (Exception exception) {
+                                        exception.printStackTrace();
                                         String messageError = "Can't not read data source";
+                                        sendLogs(6, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                     if (Objects.isNull(partitionBy) || partitionBy.equals("")) {
                                         // merging
                                         try {
+                                            sendLogs(7, "processing", "merging", log);
                                             WindowSpec w1 = Window.partitionBy(row.<String>getAs("identity_key"));
                                             transformDF.show(false);
                                             source_data = source_data.withColumn("is_new", lit(0))
@@ -231,28 +254,39 @@ public class TriggerService {
                                                     .withColumn("latest_id", max("is_new").over(w1))
                                                     .filter("latest_id = is_new")
                                                     .drop("is_new", "latest_id");
+                                            sendLogs(7, "success", "done merging", log);
                                         } catch (Exception exception) {
+                                            exception.printStackTrace();
                                             String messageError = "Merge failed !";
+                                            sendLogs(7, "fail", messageError, log);
                                             throw new Exception(messageError);
                                         }
                                         // write data to temp location
                                         Dataset<Row> tmp = null;
                                         try {
+                                            sendLogs(8, "processing", "write data to temp location", log);
                                             source_data.write()
                                                     .mode("overwrite")
                                                     .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
                                             tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+                                            sendLogs(8, "success", "done writing data to temp location", log);
                                         } catch (Exception exception) {
+                                            exception.printStackTrace();
                                             String messageError = "Write to temp location failed !";
+                                            sendLogs(8, "fail", messageError, log);
                                             throw new Exception(messageError);
                                         }
-                                        // move from location to
+                                        // move from location to main location
                                         try {
+                                            sendLogs(9, "processing", "move from location to main location", log);
                                             tmp.write()
                                                     .mode("overwrite")
                                                     .parquet(String.format("/user/%s/%s", row.getAs("database"), row.getAs("table")));
+                                            sendLogs(9, "success", "done moving from location to main location", log);
                                         } catch (Exception exception) {
-                                            String messageError = "";
+                                            exception.printStackTrace();
+                                            String messageError = "Fail moving from location to main location";
+                                            sendLogs(9, "success", messageError, log);
                                             throw new Exception(messageError);
                                         }
                                     } else {
@@ -269,9 +303,14 @@ public class TriggerService {
                                         //
                                         Dataset<Row> notAddDS = null;
                                         try {
-                                            transformDF.filter("operation <> 1").alias("cdc");
+
+                                            sendLogs(7, "processing", "get update/delete data", log);
+                                            notAddDS = transformDF.filter("operation <> 1").alias("cdc");
+                                            sendLogs(7, "success", "done getting update/delete data", log);
                                         } catch (Exception exception) {
+                                            exception.printStackTrace();
                                             String messageError = "Get update/delete data failed !";
+                                            sendLogs(7, "success", messageError, log);
                                             throw new Exception(messageError);
                                         }
 //                                        source_data.printSchema();
@@ -286,6 +325,7 @@ public class TriggerService {
                                                     .withColumn("last____time", max("modified").over(w1))
                                                     .filter(expr("modified = last____time and (operation <> 3 or operation is null)"));
                                             //
+                                            sendLogs(8, "processing", "merge update/delete data", log);
                                             if (source_data.count() > 0) {
                                                 // rewrite data updated and deleted
                                                 source_data.show();
@@ -295,7 +335,8 @@ public class TriggerService {
                                                         .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
                                             }
                                             //
-
+                                            sendLogs(8, "success", "done merging update/delete data", log);
+                                            sendLogs(9, "processing", "merge insert data", log);
                                             if (transformDF.filter("operation = 1").count() > 0) {
                                                 // append new data inserted
                                                 transformDF.filter("operation = 1").write()
@@ -303,42 +344,55 @@ public class TriggerService {
                                                         .partitionBy(partitionBy)
                                                         .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
                                             }
+                                            sendLogs(9, "success", "done merging insert data", log);
                                         } catch (Exception exception) {
-                                            String messageError = "";
+                                            exception.printStackTrace();
+                                            String messageError = "fail merging: " + exception.getMessage();
+                                            sendLogs(9, "fail", messageError, log);
                                             throw new Exception(messageError);
                                         }
                                     }
                                     int latest_id;
                                     try {
+                                        sendLogs(10, "processing", "get latest id", log);
                                         latest_id = sqlUtils.getLatestId(row.getAs("server_host"), row.getAs("port"),
                                                 row.getAs("database"), row.getAs("table"), connection);
+                                        sendLogs(10, "success", "done getting latest id", log);
                                     } catch (Exception exception) {
-                                        String messageError = "";
+                                        exception.printStackTrace();
+                                        String messageError = "fail getting latest id";
+                                        sendLogs(10, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                     // update readiness
                                     try {
+                                        sendLogs(11, "processing", "update readiness", log);
                                         if (maxID < latest_id) {
                                             sqlUtils.updateReady(row.getAs("server_host"), row.getAs("port")
                                                     , row.getAs("database"), row.getAs("table"), connection, 1);
                                             System.out.println("updated readiness");
                                         }
+                                        sendLogs(11, "success", "done updating readiness", log);
                                     } catch (Exception exception) {
-                                        String messageError = "";
+                                        exception.printStackTrace();
+                                        String messageError = "fail updating readiness";
+                                        sendLogs(11, "fail", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                     // update offsets
                                     try {
+                                        sendLogs(12, "processing", "update offsets kafka", log);
                                         sqlUtils.updateOffset(connection, row.getAs("server_host"), row.getAs("port")
                                                 , row.getAs("database"), row.getAs("table"), (int) (latest_offset + numberRecords));
-                                        System.out.println("updated offsets");
+                                        sendLogs(12, "success", "dont updating offsets kafka", log);
                                     } catch (Exception exception) {
-                                        String messageError = "";
+                                        exception.printStackTrace();
+                                        String messageError = "fail updating offsets kafka";
+                                        sendLogs(12, "success", messageError, log);
                                         throw new Exception(messageError);
                                     }
                                 }
                             }
-                            System.out.println("doneee");
                         } catch (Exception exception) {
                             DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
                             Date date = new Date();
@@ -348,5 +402,12 @@ public class TriggerService {
                 })
                 .start()
                 .awaitTermination();
+    }
+
+    public static void sendLogs(int step, String status, String message, LogModel log) {
+        log.setStep(step);
+        log.setStatus(status);
+        log.setMessage(message);
+        sqlUtils.logProducer("localhost:9092", "jobs_log", log);
     }
 }

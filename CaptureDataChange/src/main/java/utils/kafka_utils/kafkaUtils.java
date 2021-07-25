@@ -1,6 +1,10 @@
 package utils.kafka_utils;
 
 import com.google.gson.Gson;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import models.CDCModel;
 import models.TableMonitor;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -15,6 +19,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.bson.Document;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -57,7 +62,7 @@ public class kafkaUtils {
             } catch (InterruptedException e) {
                 throw new IllegalStateException(e);
             }
-        } catch (Exception exception){
+        } catch (Exception exception) {
 
         }
     }
@@ -78,15 +83,22 @@ public class kafkaUtils {
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         // đọc tất cả các message  của topic từ offset ban đầu
         //    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<String,String>(props);
-        consumer.subscribe(Arrays.asList(kafkaTopic));
-        while (true) {
-            ConsumerRecords<String, String> records = consumer.poll(100);
-            for (ConsumerRecord<String, String> record : records)
-                System.out.printf("offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
-                // save value to mongo
-
-                //
+        String connectionString = "mongodb://127.0.0.1:27017/?compressors=zlib&gssapiServiceName=mongodb";
+        try (MongoClient mongoClient = MongoClients.create(connectionString)) {
+            KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(props);
+            consumer.subscribe(Arrays.asList(kafkaTopic));
+            MongoDatabase sampleTrainingDB = mongoClient.getDatabase("webservice_db");
+            MongoCollection<Document> jobsLogCollection = sampleTrainingDB.getCollection("job_logs");
+            System.out.println("start listening");
+            while (true) {
+                ConsumerRecords<String, String> records = consumer.poll(100);
+                for (ConsumerRecord<String, String> record : records) {
+                    System.out.printf("offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
+                    jobsLogCollection.insertOne(Document.parse(record.value()));
+                }
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
         }
     }
 
