@@ -5,6 +5,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import kafka.log.Log;
 import models.CDCModel;
 import models.TableMonitor;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -155,4 +156,5 @@ public class kafkaUtils {
         producer.close();
         System.out.println("DONE");
     }
+
 }

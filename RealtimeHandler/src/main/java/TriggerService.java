@@ -251,9 +251,13 @@ public class TriggerService {
                                             transformDF.show(false);
                                             source_data = source_data.withColumn("is_new", lit(0))
                                                     .unionByName(transformDF.drop("operation").withColumn("is_new", lit(1)))
-                                                    .withColumn("latest_id", max("is_new").over(w1))
+                                                    .withColumn("latest_id", max("is_new").over(w1));
+                                            System.out.println("after union");
+                                            source_data.filter("id = 1").show();
+                                            source_data = source_data
                                                     .filter("latest_id = is_new")
                                                     .drop("is_new", "latest_id");
+
                                             sendLogs(7, "success", "done merging", log);
                                         } catch (Exception exception) {
                                             exception.printStackTrace();
@@ -281,7 +285,7 @@ public class TriggerService {
                                             sendLogs(9, "processing", "move from location to main location", log);
                                             tmp.write()
                                                     .mode("overwrite")
-                                                    .parquet(String.format("/user/%s/%s", row.getAs("database"), row.getAs("table")));
+                                                    .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
                                             sendLogs(9, "success", "done moving from location to main location", log);
                                         } catch (Exception exception) {
                                             exception.printStackTrace();
@@ -384,7 +388,7 @@ public class TriggerService {
                                         sendLogs(12, "processing", "update offsets kafka", log);
                                         sqlUtils.updateOffset(connection, row.getAs("server_host"), row.getAs("port")
                                                 , row.getAs("database"), row.getAs("table"), (int) (latest_offset + numberRecords));
-                                        sendLogs(12, "success", "dont updating offsets kafka", log);
+                                        sendLogs(12, "success", "done updating offsets kafka", log);
                                     } catch (Exception exception) {
                                         exception.printStackTrace();
                                         String messageError = "fail updating offsets kafka";
@@ -408,6 +412,16 @@ public class TriggerService {
         log.setStep(step);
         log.setStatus(status);
         log.setMessage(message);
+        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS");
+        Date date = new Date();
+        log.setCreate_time(dateFormat.format(date));
+        if (status.equals("success")) {
+            log.setStatusOrder(3);
+        } else if (status.equals("fail")) {
+            log.setStatusOrder(2);
+        } else if (status.equals("processing")) {
+            log.setStatusOrder(1);
+        }
         sqlUtils.logProducer("localhost:9092", "jobs_log", log);
     }
 }

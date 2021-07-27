@@ -12,6 +12,8 @@ public class LogModel {
     private int number_step;
     private String message;
     private String status;
+    private String create_time;
+    private int statusOrder;
 
     public int getJob_id() {
         return job_id;
@@ -99,6 +101,22 @@ public class LogModel {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getCreate_time() {
+        return create_time;
+    }
+
+    public void setCreate_time(String create_time) {
+        this.create_time = create_time;
+    }
+
+    public int getStatusOrder() {
+        return statusOrder;
+    }
+
+    public void setStatusOrder(int statusOrder) {
+        this.statusOrder = statusOrder;
     }
 
     public LogModel(int job_id, int request_id, String host, String port, String database_name, String table_name, int step, String request_type, int number_step, String message, String status) {

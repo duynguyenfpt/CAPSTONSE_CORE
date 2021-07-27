@@ -30,6 +30,8 @@ public class CheckReadinessService {
                 System.out.println("START FETCHING ALL DATABASE SOURCES: " + dateFormat.format(date));
                 System.out.println("NEXT FETCHING IN 20 SECONDS");
                 try {
+                    // get valid job and request
+                    // ready tables
                     String query = "" +
                             "SELECT si.server_domain,si.server_host,di.`port`,di.database_type,str.identity_id,str.partition_by,str.id as str_id, jobs.id as job_id,\n" +
                             "jobs.max_retries, jobs.number_retries, tm.latest_offset, tm.`table`, tm.database FROM\n" +
@@ -69,6 +71,7 @@ public class CheckReadinessService {
                         tm.setNumber_retries(rs.getInt("number_retries"));
                         tm.setLatest_offset(rs.getInt("latest_offset"));
                         tm.setDatabase(rs.getString("database"));
+                        tm.setJob_id(rs.getInt("job_id"));
                         list_monitors.add(tm);
                     }
                     if (list_monitors.size() > 0) {
