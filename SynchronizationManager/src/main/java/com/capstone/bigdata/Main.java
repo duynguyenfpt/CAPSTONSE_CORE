@@ -5,7 +5,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
+import models.LogModel;
 import org.stringtemplate.v4.ST;
 import utils.*;
 
@@ -21,15 +25,17 @@ public class Main {
         if (partitionBy.equals(" ")) {
             partitionBy = "' '";
         }
-        int jobID = Integer.parseInt(args[7]);
-        int isAll = Integer.parseInt(args[8]);
+        int strID = Integer.parseInt(args[7]);
+        int jobID = Integer.parseInt(args[8]);
+        int isAll = Integer.parseInt(args[9]);
+        String database_type = args[10];
         if (isAll == 0) {
-            syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID);
+            syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID, strID, database_type);
         }
     }
 
     public static void syncAll(String host, String port, String username, String password
-            , String tableName, String dbName, String partitionBy, int jobID) throws SQLException {
+            , String tableName, String dbName, String partitionBy, int jobID, int strID, String database_type) throws SQLException {
         // update job status
         Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
                 "cdc", "duynt", "Capstone123@"));
@@ -39,25 +45,43 @@ public class Main {
         //
         System.out.println("START INGEST CDC");
         String cdcCmd = String.format("java -cp jars/CDC-1.0-SNAPSHOT-jar-with-dependencies.jar " +
-                "com.bigdata.capstone.main %s %s %s %s %s %s %s", host, port, dbName, username, password, tableName, jobID);
+                "com.bigdata.capstone.main %s %s %s %s %s %s %s %d %s", host, port, dbName, username, password, tableName, jobID, strID, database_type);
         System.out.println(cdcCmd);
-        runCommand(cdcCmd);
-        System.out.println("DONE INGEST");
-        // do snapshot
-        System.out.println("START SNAPSHOT");
-        String cmd = String.format("spark-submit --master yarn --class SparkWriter " +
-                "--num-executors 1 --executor-cores 2 --executor-memory 1G " +
-                "--jars jars/mysql-connector-java-8.0.25.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
-                "%s %s %s %s %s %s %s %d", dbName, tableName, username, password, host, port, partitionBy, jobID);
-        System.out.println(cmd);
-        runCommand(cmd);
-        System.out.println("DONE SNAPSHOT");
-        System.out.println("UPDATE READINESS");
-        Connection connection = sqlUtils.getConnection(
-                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
-        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
-        System.out.println("DONE UPDATING ACTIVENESS");
-        sqlUtils.updateJobStatus(configConnection, jobID, "success");
+//        runCommand(cdcCmd);
+//        System.out.println("DONE INGEST");
+//        // do snapshot
+//        System.out.println("START SNAPSHOT");
+//        String cmd = String.format("spark-submit --master yarn --class SparkWriter " +
+//                "--num-executors 1 --executor-cores 2 --executor-memory 1G " +
+//                "--driver-class-path jars/kafka-clients-2.4.1.jar:jars/mysql-connector-java-8.0.25.jar --jars jars/mysql-connector-java-8.0.25.jar " +
+//                "jars/ParquetTest-1.0-SNAPSHOT.jar " +
+//                "%s %s %s %s %s %s %s %d %d", dbName, tableName, username, password, host, port, partitionBy, jobID, strID);
+//        System.out.println(cmd);
+//        runCommand(cmd);
+//        System.out.println("DONE SNAPSHOT");
+//        System.out.println("UPDATE READINESS");
+//        Connection connection = sqlUtils.getConnection(
+//                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
+//        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
+//        System.out.println("DONE UPDATING ACTIVENESS");
+//        sqlUtils.updateJobStatus(configConnection, jobID, "success");
+    }
+
+    public static void sendLogs(int step, String status, String message, LogModel log) {
+        log.setStep(step);
+        log.setStatus(status);
+        log.setMessage(message);
+        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS");
+        Date date = new Date();
+        log.setCreate_time(dateFormat.format(date));
+        if (status.equals("success")) {
+            log.setStatusOrder(3);
+        } else if (status.equals("fail")) {
+            log.setStatusOrder(2);
+        } else if (status.equals("processing")) {
+            log.setStatusOrder(1);
+        }
+        sqlUtils.logProducer("localhost:9092", "jobs_log", log);
     }
 
     public static void runCommand(String cmdToExecute) {

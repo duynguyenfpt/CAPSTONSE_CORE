@@ -1,5 +1,6 @@
 import com.google.gson.Gson;
 import models.LogModel;
+import models.TableMonitor;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -15,11 +16,17 @@ public class sqlUtils {
         return String.format("jdbc:mysql://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&allowPublicKeyRetrieval=true", host, port, db, userName, password);
     }
 
+    public static String getConnectionString(String databaseType, String host, String port, String db, String userName, String password) {
+//        return String.format("jdbc:mysql://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&verifyServerCertificate=false&autoReconnect=true", host, port, db, userName, password);
+        return String.format("jdbc:%s://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&allowPublicKeyRetrieval=true", databaseType, host, port, db, userName, password);
+    }
+
     //
     public static Connection getConnection(String dbURL) {
         Connection conn = null;
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+//            Class.forName("com.mysql.cj.jdbc.Driver");
+//            Class.forName("com.mysql.cj.jdbc.Driver");
             conn = DriverManager.getConnection(dbURL);
             System.out.println("connected successfully");
         } catch (Exception ex) {
@@ -192,5 +199,30 @@ public class sqlUtils {
         producer.send(new ProducerRecord<String, String>(kafkaTopic, log.getHost() + "-" + log.getPort() + "-"
                 + log.getDatabase_name() + "-" + log.getTable_name(), gson.toJson(log)));
         producer.close();
+    }
+
+    public static void applicationProducer(String kafkaCluster, String kafkaTopic, TableMonitor monitorModel) {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaCluster);
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        //If the request fails, the producer can automatically retry,
+        props.put(ProducerConfig.RETRIES_CONFIG, 0);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
+        //Reduce the no of requests less than 0
+        props.put(ProducerConfig.LINGER_MS_CONFIG, 1);
+        //The buffer.memory controls the total amount of memory available to the producer for buffering.
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.StringSerializer");
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                "org.apache.kafka.common.serialization.StringSerializer");
+        Producer<String, String> producer = new KafkaProducer<String, String>(props);
+        Gson gson = new Gson();
+        System.out.println(kafkaTopic);
+        producer.send(new ProducerRecord<String, String>(kafkaTopic, monitorModel.getServer_host() + "-" + monitorModel.getPort()
+                + "-" + monitorModel.getDatabase_type() + "-" + monitorModel.getTable(), gson.toJson(monitorModel)));
+        System.out.println("producing: " + gson.toJson(monitorModel));
+        producer.close();
+        System.out.println("DONE");
     }
 }

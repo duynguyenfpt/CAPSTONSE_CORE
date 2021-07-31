@@ -24,14 +24,16 @@ public class CheckJob {
             @Override
             public void run() {
                 try {
-                    String template = "java -cp jars/SynchronizationManager-1.0.jar:jars/mysql-connector-java-8.0.25.jar com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d";
+                    String template = "java -cp jars/SynchronizationManager-1.0.jar:jars/mysql-connector-java-8.0.25.jar:jars/kafka-clients-2.4.1.jar " +
+                            "com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d %d %s";
                     DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
                     Date date = new Date();
                     System.out.println("START CHECKING REQUEST: " + dateFormat.format(date));
                     System.out.println("NEXT CHECKING IN 10 SECONDS");
                     String query = "" +
                             "SELECT si.server_host,di.port,di.username,di.password,di.database_name," +
-                            "tbls.`table_name`,jobs.id as job_id, str.partition_by, str.is_all FROM \n" +
+                            "tbls.`table_name`,jobs.id as job_id, str.partition_by, " +
+                            "str.is_all, str.id as str_id,di.database_type FROM \n" +
                             "(SELECT * FROM webservice_test.jobs\n" +
                             "where number_retries < max_retries and status = 'pending' and deleted = 0) as jobs\n" +
                             "INNER JOIN\n" +
@@ -59,17 +61,20 @@ public class CheckJob {
                         String table_name = rs.getString("table_name");
                         int job_id = rs.getInt("job_id");
                         int is_all = rs.getInt("is_all");
+                        int str_id = rs.getInt("str_id");
                         String partition_by = rs.getString("partition_by");
 
                         if (Objects.isNull(partition_by) || partition_by.equals("") || partition_by.equals(" ")) {
                             partition_by = "' '";
                         }
+                        String database_type = rs.getString("database_type");
                         System.out.println(partition_by);
-                        String cmd = String.format(template, host, port, username, password, table_name, database_name, partition_by, job_id, is_all);
+                        String cmd = String.format(template, host, port, username, password, table_name,
+                                database_name, partition_by, str_id, job_id, is_all, database_type);
                         System.out.println(cmd);
                         runCommand(cmd);
                     }
-                } catch (SQLException sqlException) {
+                } catch (Exception sqlException) {
                     sqlException.printStackTrace();
                 }
             }
