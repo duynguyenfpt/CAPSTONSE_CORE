@@ -5,9 +5,11 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import oracle.jdbc.driver.OracleDriver;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Properties;
 
 public class sqlUtils {
@@ -19,6 +21,21 @@ public class sqlUtils {
     public static String getConnectionString(String databaseType, String host, String port, String db, String userName, String password) {
 //        return String.format("jdbc:mysql://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&verifyServerCertificate=false&autoReconnect=true", host, port, db, userName, password);
         return String.format("jdbc:%s://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&allowPublicKeyRetrieval=true", databaseType, host, port, db, userName, password);
+    }
+
+    public static Connection getConnectionOracle(String username, String password, String host, String port, String SID) {
+        SID = "oracle";
+        Connection conn = null;
+        try {
+//            Class.forName("com.mysql.cj.jdbc.Driver");
+            Class.forName("oracle.jdbc.driver.OracleDriver");
+            conn = DriverManager.getConnection("jdbc:oracle:thin:system/capstone@localhost:1521:oracle");
+//            conn = DriverManager.getConnection(String.format("jdbc:oracle:thin:@%s:%s:%s", host, port, SID), username, password);
+            System.out.println("connected successfully");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return conn;
     }
 
     //

@@ -1,4 +1,5 @@
 package com.bigdata.capstone;
+
 import utils.db_utils.sqlUtils;
 
 import java.sql.Connection;
@@ -14,7 +15,11 @@ public class Test {
 //        Statement statement= connection.createStatement();
 //        statement.execute("create database test_create");
 //        //
-        final String uuid = UUID.randomUUID().toString().replace("-", "");
-        System.out.println("uuid = " + uuid);
+        try {
+            Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+                    "cdc", "duynt", "Capstone123@"));
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 }

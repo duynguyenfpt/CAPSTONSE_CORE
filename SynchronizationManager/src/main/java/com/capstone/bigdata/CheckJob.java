@@ -57,6 +57,9 @@ public class CheckJob {
                         String port = rs.getString("port");
                         String username = rs.getString("username");
                         String password = rs.getString("password");
+                        if (Objects.isNull(password) || password.equals("") || password.equals(" ")) {
+                            password = "' '";
+                        }
                         String database_name = rs.getString("database_name");
                         String table_name = rs.getString("table_name");
                         int job_id = rs.getInt("job_id");

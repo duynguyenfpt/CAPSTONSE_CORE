@@ -43,13 +43,14 @@ public class main {
         String jobID = args[6];
         String strID = args[7];
         String databaseType = args[8];
-        String connectionString = sqlUtils.getConnectionString(host, port, db, username, password);
+        String connectionString = sqlUtils.getConnectionString(host, port, db, username, password, databaseType);
         Connection connection = sqlUtils.getConnection(connectionString);
         /*
          * Main pipeline for capture change data
          * */
         Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
                 "cdc", "duynt", "Capstone123@"));
+        //
         try {
 
             LogModel log = new LogModel(Integer.parseInt(jobID), Integer.parseInt(strID),
@@ -61,7 +62,12 @@ public class main {
                 if (databaseType.equals("mysql")) {
                     initCdcAtSource(host, port, db, username, password);
                 } else if (databaseType.equals("postgresql")) {
+                    initCdcAtSourcePostgresql(host, port, db, username, password);
+                } else if (databaseType.equals("oracle")) {
 
+                } else {
+                    sendLogs(1, "failed", "table not supported!", log);
+                    throw new Exception("table not supported!");
                 }
                 sendLogs(1, "success", "done init database and table", log);
             } catch (Exception exception) {
@@ -176,8 +182,11 @@ public class main {
         if (count > 0) {
             // if exist database
             // ignore
+            connection.close();
+            return;
         } else {
-            list_queries.add(String.format("create database %s", cdcDatabase));
+            Statement statement = connection.createStatement();
+            statement.execute(String.format("create database %s", cdcDatabase));
         }
         connection.close();
         // switch to cdc database
@@ -194,11 +203,8 @@ public class main {
                 "  operation int DEFAULT NULL,\n" +
                 "  created date DEFAULT CURRENT_DATE\n" +
                 ");";
-        list_queries.add(createTable);
-        for (String query : list_queries) {
-            Statement statement = connection.createStatement();
-            statement.execute(query);
-//        }
-        }
+        Statement statement = connection.createStatement();
+        statement.execute(createTable);
+        connection.close();
     }
 }

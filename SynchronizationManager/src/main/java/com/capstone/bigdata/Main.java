@@ -19,6 +19,10 @@ public class Main {
         String port = args[1];
         String username = args[2];
         String password = args[3];
+        System.out.println("password is: " + password + "hihi");
+        if (password.equals(" ")) {
+            password = "' '";
+        }
         String tableName = args[4];
         String dbName = args[5];
         String partitionBy = args[6];
@@ -36,6 +40,7 @@ public class Main {
 
     public static void syncAll(String host, String port, String username, String password
             , String tableName, String dbName, String partitionBy, int jobID, int strID, String database_type) throws SQLException {
+        System.out.println("password is: " + password + "hihi");
         // update job status
         Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
                 "cdc", "duynt", "Capstone123@"));
@@ -44,6 +49,9 @@ public class Main {
         System.out.println("table is " + tableName);
         //
         System.out.println("START INGEST CDC");
+        if (password.equals(" ")) {
+            password = "' '";
+        }
         String cdcCmd = String.format("java -cp jars/CDC-1.0-SNAPSHOT-jar-with-dependencies.jar " +
                 "com.bigdata.capstone.main %s %s %s %s %s %s %s %d %s", host, port, dbName, username, password, tableName, jobID, strID, database_type);
         System.out.println(cdcCmd);
