@@ -7,10 +7,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.Properties;
 
 public class sqlUtils {
@@ -73,5 +70,20 @@ public class sqlUtils {
         producer.send(new ProducerRecord<String, String>(kafkaTopic, log.getHost() + "-" + log.getPort() + "-"
                 + log.getDatabase_name() + "-" + log.getTable_name(), gson.toJson(log)));
         producer.close();
+    }
+
+    public static String getSID(String host, String port, Connection connection) throws SQLException {
+        String query = "SELECT sid from webservice_test.database_infos di\n" +
+                "inner join webservice_test.server_infos si\n" +
+                "on si.deleted = 0 and di.deleted = 0 and di.server_info_id = si.id\n" +
+                "where si.server_host = ? and port = ? ;";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            return rs.getString("sid");
+        }
+        return null;
     }
 }

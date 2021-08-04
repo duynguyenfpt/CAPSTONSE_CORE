@@ -3,6 +3,9 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -33,22 +36,35 @@ public class SparkWriter {
             jobID = args[7];
             String strID = args[8];
             String database_type = args[9];
-//        System.out.println(partitionBy.equals(""));
-//        System.out.println(partitionBy.equals(" "));
-//        System.out.println(Objects.isNull(partitionBy));
             log = new LogModel(Integer.parseInt(jobID), Integer.parseInt(strID),
                     host, port, database, table, 1, "sync_all",
                     5, null, null);
+            //
+            Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+                    "cdc", "duynt", "Capstone123@"));
+            String sid = sqlUtils.getSID(host, port, configConnection);
+            //
             SparkSession sparkSession = SparkSession
                     .builder()
                     .appName(String.format("snapshot database  %s-%s-%s-%s to parquet", host, port, database, table))
                     .getOrCreate();
 
             sendLogs(5, "processing", "start snapshotting", log);
+            String path = "";
+            if (!database_type.equalsIgnoreCase("oracle")) {
+                path = String.format("/user/%s/%s/%s/%s/%s/", database_type, host, port, database, table);
+            } else {
+                path = String.format("/user/%s/%s/%s/%s/%s/", database_type, host, port, username, table);
+            }
 
-            String path = String.format("/user/test/%s/%s/", database, table);
-            String url = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&" +
-                    "useJDBCCompliantTimezoneShift=true&useLegacyDatetimeCode=false&serverTimezone=UTC", host, port, database);
+            String url = "";
+
+            if (database_type.equalsIgnoreCase("mysql") || database_type.equalsIgnoreCase("postgresql")) {
+                url = String.format("jdbc:%s://%s:%s/%s?user=%s&password=%s&useSSL=false&characterEncoding=utf-8&allowPublicKeyRetrieval=true"
+                        , database_type, host, port, database, username, password);
+            } else if (database_type.equals("oracle")) {
+                url = String.format("jdbc:oracle:thin:%s/%s@%s:%s:%s", username, password, host, port, sid);
+            }
             String currentTime = LocalDateTime.now()
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
             Dataset<Row> input = sparkSession.read()
@@ -96,5 +112,20 @@ public class SparkWriter {
             log.setStatusOrder(1);
         }
         sqlUtils.logProducer("localhost:9092", "jobs_log", log);
+    }
+
+    public static String getSID(String host, String port, Connection connection) throws SQLException {
+        String query = "SELECT sid from webservice_test.database_infos di\n" +
+                "inner join webservice_test.server_infos si\n" +
+                "on si.deleted = 0 and di.deleted = 0 and di.server_info_id = si.id\n" +
+                "where si.server_host = ? and port = ? ;";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            return rs.getString("sid");
+        }
+        return null;
     }
 }

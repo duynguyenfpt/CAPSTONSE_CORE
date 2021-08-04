@@ -19,7 +19,6 @@ public class Main {
         String port = args[1];
         String username = args[2];
         String password = args[3];
-        System.out.println("password is: " + password + "hihi");
         if (password.equals(" ")) {
             password = "' '";
         }
@@ -40,7 +39,6 @@ public class Main {
 
     public static void syncAll(String host, String port, String username, String password
             , String tableName, String dbName, String partitionBy, int jobID, int strID, String database_type) throws SQLException {
-        System.out.println("password is: " + password + "hihi");
         // update job status
         Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
                 "cdc", "duynt", "Capstone123@"));
@@ -55,24 +53,23 @@ public class Main {
         String cdcCmd = String.format("java -cp jars/CDC-1.0-SNAPSHOT-jar-with-dependencies.jar " +
                 "com.bigdata.capstone.main %s %s %s %s %s %s %s %d %s", host, port, dbName, username, password, tableName, jobID, strID, database_type);
         System.out.println(cdcCmd);
-//        runCommand(cdcCmd);
-//        System.out.println("DONE INGEST");
+        runCommand(cdcCmd);
+        System.out.println("DONE INGEST");
 //        // do snapshot
-//        System.out.println("START SNAPSHOT");
-//        String cmd = String.format("spark-submit --master yarn --class SparkWriter " +
-//                "--num-executors 1 --executor-cores 2 --executor-memory 1G " +
-//                "--driver-class-path jars/kafka-clients-2.4.1.jar:jars/mysql-connector-java-8.0.25.jar --jars jars/mysql-connector-java-8.0.25.jar " +
-//                "jars/ParquetTest-1.0-SNAPSHOT.jar " +
-//                "%s %s %s %s %s %s %s %d %d", dbName, tableName, username, password, host, port, partitionBy, jobID, strID);
-//        System.out.println(cmd);
-//        runCommand(cmd);
-//        System.out.println("DONE SNAPSHOT");
-//        System.out.println("UPDATE READINESS");
-//        Connection connection = sqlUtils.getConnection(
-//                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
-//        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
-//        System.out.println("DONE UPDATING ACTIVENESS");
-//        sqlUtils.updateJobStatus(configConnection, jobID, "success");
+        System.out.println("START SNAPSHOT");
+        String cmd = String.format("spark-submit --master yarn --class SparkWriter --num-executors 1 --executor-cores 2 --executor-memory 1G " +
+                "--driver-class-path jars/kafka-clients-2.4.1.jar:jars/mysql-connector-java-8.0.25.jar:jars/postgresql-42.2.23.jar:jars/ojdbc8-12.2.0.1.jar " +
+                "--jars jars/mysql-connector-java-8.0.25.jar,jars/ojdbc8-12.2.0.1.jar,jars/postgresql-42.2.23.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
+                "%s %s %s %s %s %s %s %d %d %s", dbName, tableName, username, password, host, port, partitionBy, jobID, strID, database_type);
+        System.out.println(cmd);
+        runCommand(cmd);
+        System.out.println("DONE SNAPSHOT");
+        System.out.println("UPDATE READINESS");
+        Connection connection = sqlUtils.getConnection(
+                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
+        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
+        System.out.println("DONE UPDATING ACTIVENESS");
+        sqlUtils.updateJobStatus(configConnection, jobID, "success");
     }
 
     public static void sendLogs(int step, String status, String message, LogModel log) {

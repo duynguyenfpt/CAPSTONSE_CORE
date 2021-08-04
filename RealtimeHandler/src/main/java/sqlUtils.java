@@ -24,12 +24,11 @@ public class sqlUtils {
     }
 
     public static Connection getConnectionOracle(String username, String password, String host, String port, String SID) {
-        SID = "oracle";
         Connection conn = null;
         try {
 //            Class.forName("com.mysql.cj.jdbc.Driver");
             Class.forName("oracle.jdbc.driver.OracleDriver");
-            conn = DriverManager.getConnection("jdbc:oracle:thin:system/capstone@localhost:1521:oracle");
+            conn = DriverManager.getConnection(String.format("jdbc:oracle:thin:%s/%s@%s:%s:%s", username, password, host, port, SID));
 //            conn = DriverManager.getConnection(String.format("jdbc:oracle:thin:@%s:%s:%s", host, port, SID), username, password);
             System.out.println("connected successfully");
         } catch (Exception ex) {

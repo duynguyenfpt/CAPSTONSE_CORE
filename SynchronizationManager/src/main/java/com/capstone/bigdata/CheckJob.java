@@ -61,6 +61,10 @@ public class CheckJob {
                             password = "' '";
                         }
                         String database_name = rs.getString("database_name");
+                        if (Objects.isNull(database_name) || database_name.equals("") || database_name.equals(" ")) {
+                            // oracle case
+                            database_name = username;
+                        }
                         String table_name = rs.getString("table_name");
                         int job_id = rs.getInt("job_id");
                         int is_all = rs.getInt("is_all");

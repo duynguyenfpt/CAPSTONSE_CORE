@@ -1,6 +1,7 @@
 package sub_service;
 
 import models.CDCModel;
+import models.OffsetModel;
 import org.apache.kafka.common.protocol.types.Field;
 import utils.db_utils.sqlUtils;
 import utils.kafka_utils.kafkaUtils;
@@ -27,19 +28,25 @@ public class CheckOffsetService {
         String cdcDB = String.format("%s_cdc", prefix);
         String cdcTable = "cdc_detail";
         //
-        Connection sourceConnection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port,
-                cdcDB, username, password));
+        OffsetModel offset = sqlUtils.getOffsets(offsetConnection, host, port);
         //
-        int offset = sqlUtils.getOffsets(offsetConnection, host, port);
+        Connection sourceConnection = null;
+        if (offset.getDbType().equalsIgnoreCase("mysql") || offset.getDbType().equalsIgnoreCase("postgresql")) {
+            sourceConnection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port,
+                    cdcDB, username, password, offset.getDbType()));
+        } else {
+            String sid = sqlUtils.getSID(host, port, offsetConnection);
+            sourceConnection = sqlUtils.getConnectionOracle(username, password, host, port, sid);
+        }
         int max_id = sqlUtils.getLatestID(sourceConnection);
         //
-        if (offset < max_id) {
+        if (offset.getOffsets() < max_id) {
             //
             System.out.println("offsets: " + offset);
             System.out.println("max_id: " + max_id);
             //
             //
-            ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(sourceConnection, offset, max_id);
+            ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(sourceConnection, offset.getOffsets(), max_id);
             //
             String current_table = "";
             ArrayList current_cdcs = new ArrayList();
