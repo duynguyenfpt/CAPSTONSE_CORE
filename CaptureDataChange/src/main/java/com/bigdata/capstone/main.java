@@ -7,10 +7,8 @@ import utils.db_utils.sqlUtils;
 import java.sql.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.*;
 import java.util.Date;
-import java.util.List;
 
 public class main {
     public static final String prefix = "cdc_4912929_";
@@ -126,7 +124,7 @@ public class main {
             // 3. init offset for checking
             try {
                 sendLogs(3, "processing", " init offset for checking", log);
-                sqlUtils.initOffset(connection, configConnection, host, port, databaseType, owner);
+                sqlUtils.initOffset(configConnection, host, port, databaseType);
                 sendLogs(3, "success", " done init offset for checking", log);
             } catch (Exception exception) {
                 sendLogs(3, "failed", " failed init offset for checking", log);
@@ -146,6 +144,13 @@ public class main {
 //            sqlUtils.insertJobLog(jobID, 1, "ingest_cdc", 1);
         } catch (Exception sqlException) {
             sqlException.printStackTrace();
+        } finally {
+            if (!Objects.isNull(configConnection)) {
+                configConnection.close();
+            }
+            if (!Objects.isNull(connection)) {
+                configConnection.close();
+            }
         }
     }
 

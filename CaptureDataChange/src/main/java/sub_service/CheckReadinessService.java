@@ -34,7 +34,7 @@ public class CheckReadinessService {
                     // ready tables
                     String query = "" +
                             "SELECT si.server_domain,si.server_host,di.`port`,di.database_type,str.identity_id,str.partition_by,str.id as str_id, jobs.id as job_id,\n" +
-                            "jobs.max_retries, jobs.number_retries, tm.latest_offset, tm.`table`, tm.database FROM\n" +
+                            "jobs.max_retries, jobs.number_retries, tm.latest_offset, tm.`table`, tm.database, di.username FROM\n" +
                             "webservice_test.database_infos di\n" +
                             "inner join \n" +
                             "(select * from webservice_test.`tables`)tbls\n" +
@@ -53,7 +53,7 @@ public class CheckReadinessService {
                             "and tm.is_active = 1 and tm.is_ready = 1 " +
                             "and tm.database = di.database_name " +
                             "and tm.table = tbls.table_name " +
-                            "and number_retries < max_retries and jobs.deleted = 0";
+                            "and number_retries < max_retries and jobs.deleted = 0 and si.deleted = 0 and di.deleted = 0";
                     //
                     Statement statement = connection.createStatement();
                     ResultSet rs = statement.executeQuery(query);
@@ -72,6 +72,7 @@ public class CheckReadinessService {
                         tm.setLatest_offset(rs.getInt("latest_offset"));
                         tm.setDatabase(rs.getString("database"));
                         tm.setJob_id(rs.getInt("job_id"));
+                        tm.setUsername(rs.getString("username"));
                         list_monitors.add(tm);
                     }
                     if (list_monitors.size() > 0) {

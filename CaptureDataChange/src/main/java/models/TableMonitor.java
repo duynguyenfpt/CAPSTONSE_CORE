@@ -13,6 +13,7 @@ public class TableMonitor {
     private int latest_offset;
     private String table;
     private String database;
+    private String username;
 
     public String getDatabase() {
         return database;
@@ -20,6 +21,14 @@ public class TableMonitor {
 
     public void setDatabase(String database) {
         this.database = database;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getServer_host() {

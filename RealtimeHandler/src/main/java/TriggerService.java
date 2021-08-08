@@ -67,6 +67,7 @@ public class TriggerService {
                 DataTypes.createStructField("number_retries", DataTypes.IntegerType, true),
                 DataTypes.createStructField("latest_offset", DataTypes.IntegerType, true),
                 DataTypes.createStructField("database", DataTypes.StringType, true),
+                DataTypes.createStructField("username", DataTypes.StringType, true),
         });
 
         readDF
@@ -82,8 +83,6 @@ public class TriggerService {
                                     .withColumn("topic"
                                             , concat_ws("-", lit("cdc"), col("server_host"), col("port"),
                                                     col("database"), col("table")));
-                            //
-                            dataset.printSchema();
                             //
                             System.out.println("Execute Distinct: " + dataset.count());
                             //
@@ -165,12 +164,12 @@ public class TriggerService {
                                         try {
                                             sendLogs(3, "processing", "reading table metadata", log, row, connection);
                                             String schema = dataset1.select("schema").limit(1).collectAsList().get(0).getString(0);
-                                            Pattern pattern = Pattern.compile("\"([a-z_:]+)");
+                                            Pattern pattern = Pattern.compile("\"([a-zA-Z1-9_:]+)");
                                             Matcher matcher = pattern.matcher(schema);
                                             HashMap<String, String> fieldTypeMap = new HashMap<>();
                                             while (matcher.find()) {
                                                 String[] detail = matcher.group(1).split(":");
-                                                if (detail[1].equals("text")) {
+                                                if (detail[1].equals("text") || detail[1].contains("VARCHAR") || detail[1].contains("varchar") || detail[1].equals("NUMBER")) {
                                                     detail[1] = "string";
                                                 }
                                                 if (!detail[1].contains("(")) {
@@ -222,6 +221,7 @@ public class TriggerService {
                                                     .filter(expr("ssk_id = latest_operation"))
                                                     .drop("ssk_id", "latest_operation");
                                             transformDF.show(false);
+                                            transformDF.printSchema();
                                             // get current time
                                             String currentTime = LocalDateTime.now()
                                                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
@@ -229,7 +229,7 @@ public class TriggerService {
                                                     .withColumn("modified", lit(currentTime));
                                             sendLogs(5, "success", "done removing duplication operations", log, row, connection);
                                         } catch (Exception exception) {
-//                                            exception.printStackTrace();
+                                            exception.printStackTrace();
                                             String messageError = "Can't not remove duplicates";
                                             sendLogs(5, "fail", messageError, log, row, connection);
                                             throw new SparkException(messageError);
@@ -239,7 +239,17 @@ public class TriggerService {
                                         Dataset<Row> source_data = null;
                                         try {
                                             sendLogs(6, "processing", "reading data source", log, row, connection);
-                                            source_data = sparkSession.read().parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table"))).alias("ds");
+                                            String databaseType = row.getAs("database_type");
+                                            String host = row.getAs("server_host");
+                                            String port = row.getAs("port");
+                                            String database = row.getAs("database");
+                                            String table = row.getAs("table");
+                                            String username = row.getAs("username");
+                                            if (!databaseType.equals("oracle")) {
+                                                source_data = sparkSession.read().parquet(String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, database, table)).alias("ds");
+                                            } else {
+                                                source_data = sparkSession.read().parquet(String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, username, table)).alias("ds");
+                                            }
                                             sendLogs(6, "success", "done reading data source", log, row, connection);
                                         } catch (Exception exception) {
                                             exception.printStackTrace();
@@ -286,10 +296,21 @@ public class TriggerService {
                                             }
                                             // move from location to main location
                                             try {
+                                                String databaseType = row.getAs("database_type");
+                                                String host = row.getAs("server_host");
+                                                String port = row.getAs("port");
+                                                String database = row.getAs("database");
+                                                String table = row.getAs("table");
+                                                String username = row.getAs("username");
+                                                if (!databaseType.equals("oracle")) {
+                                                    tmp.write().mode("overwrite").parquet(String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, database, table));
+                                                } else {
+                                                    tmp.write().mode("overwrite").parquet(String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, username, table));
+                                                }
                                                 sendLogs(9, "processing", "move from location to main location", log, row, connection);
-                                                tmp.write()
-                                                        .mode("overwrite")
-                                                        .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
+//                                                tmp.write()
+//                                                        .mode("overwrite")
+//                                                        .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
                                                 sendLogs(9, "success", "done moving from location to main location", log, row, connection);
                                             } catch (Exception exception) {
                                                 exception.printStackTrace();
@@ -334,13 +355,25 @@ public class TriggerService {
                                                         .filter(expr("modified = last____time and (operation <> 3 or operation is null)"));
                                                 //
                                                 sendLogs(8, "processing", "merge update/delete data", log, row, connection);
+                                                String databaseType = row.getAs("database_type");
+                                                String host = row.getAs("server_host");
+                                                String port = row.getAs("port");
+                                                String database = row.getAs("database");
+                                                String table = row.getAs("table");
+                                                String username = row.getAs("username");
+                                                String path = "";
+                                                if (!databaseType.equals("oracle")) {
+                                                    path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, database, table);
+                                                } else {
+                                                    path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, username, table);
+                                                }
                                                 if (source_data.count() > 0) {
                                                     // rewrite data updated and deleted
                                                     source_data.show();
                                                     source_data.write()
                                                             .mode(SaveMode.Overwrite)
                                                             .partitionBy(partitionBy)
-                                                            .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
+                                                            .parquet(path);
                                                 }
                                                 //
                                                 sendLogs(8, "success", "done merging update/delete data", log, row, connection);
@@ -350,7 +383,7 @@ public class TriggerService {
                                                     transformDF.filter("operation = 1").write()
                                                             .mode(SaveMode.Append)
                                                             .partitionBy(partitionBy)
-                                                            .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
+                                                            .parquet(path);
                                                 }
                                                 sendLogs(9, "success", "done merging insert data", log, row, connection);
                                             } catch (Exception exception) {
@@ -447,7 +480,7 @@ public class TriggerService {
                 tm.setLatest_offset(row.getAs("latest_offset"));
                 tm.setDatabase(row.getAs("database"));
                 tm.setJob_id(row.getAs("job_id"));
-            } catch (Exception exception){
+            } catch (Exception exception) {
                 exception.printStackTrace();
             }
             // retries

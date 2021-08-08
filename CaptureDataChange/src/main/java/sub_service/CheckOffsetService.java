@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,57 +26,80 @@ public class CheckOffsetService {
     public static void handle(String host, String port, String username, String password, Connection offsetConnection) throws SQLException {
 //        String table = args[5];
         // connect to database cdc of data source
-        String cdcDB = String.format("%s_cdc", prefix);
-        String cdcTable = "cdc_detail";
-        //
-        OffsetModel offset = sqlUtils.getOffsets(offsetConnection, host, port);
         //
         Connection sourceConnection = null;
-        if (offset.getDbType().equalsIgnoreCase("mysql") || offset.getDbType().equalsIgnoreCase("postgresql")) {
-            sourceConnection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port,
-                    cdcDB, username, password, offset.getDbType()));
-        } else {
-            String sid = sqlUtils.getSID(host, port, offsetConnection);
-            sourceConnection = sqlUtils.getConnectionOracle(username, password, host, port, sid);
-        }
-        int max_id = sqlUtils.getLatestID(sourceConnection);
-        //
-        if (offset.getOffsets() < max_id) {
+        try {
+            String cdcDB = String.format("%s_cdc", prefix);
+            String cdcTable = "cdc_detail";
             //
-            System.out.println("offsets: " + offset);
-            System.out.println("max_id: " + max_id);
+            OffsetModel offset = sqlUtils.getOffsets(offsetConnection, host, port);
+            if (offset.getDbType().equalsIgnoreCase("mysql") || offset.getDbType().equalsIgnoreCase("postgresql")) {
+                sourceConnection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port,
+                        cdcDB, username, password, offset.getDbType()));
+            } else {
+                String sid = sqlUtils.getSID(host, port, offsetConnection);
+                sourceConnection = sqlUtils.getConnectionOracle(username, password, host, port, sid);
+            }
             //
+            String dbType = sqlUtils.getDBType(host, port, offsetConnection);
+            //g
+            int max_id = 0;
+            if (dbType.equals("mysql")) {
+                max_id = sqlUtils.getLatestID(sourceConnection);
+            } else if (dbType.equals("postgresql")) {
+                max_id = sqlUtils.getLatestPostgresql(host, port, username, password);
+            } else if (dbType.equals("oracle")) {
+                max_id = sqlUtils.getLatestOracle(sourceConnection);
+            }
             //
-            ArrayList<CDCModel> listCDCs = sqlUtils.getCDCs(sourceConnection, offset.getOffsets(), max_id);
-            //
-            String current_table = "";
-            ArrayList current_cdcs = new ArrayList();
-            int index = 0;
-            for (CDCModel cdc : listCDCs) {
-                String table = cdc.getTable_name();
-                // check if current one is blank
-                // only case is the first cdc
-                if (current_table.equals("")) {
-                    current_table = table;
+            if (offset.getOffsets() < max_id) {
+                //
+                System.out.println("offsets: " + offset.getOffsets());
+                System.out.println("max_id: " + max_id);
+                //
+                //
+                ArrayList<CDCModel> listCDCs = null;
+                if (dbType.equals("mysql") || dbType.equals("postgresql")) {
+                    listCDCs = sqlUtils.getCDCs(sourceConnection, offset.getOffsets(), max_id);
+                } else {
+                    listCDCs = sqlUtils.getCDCsOracle(sourceConnection, offset.getOffsets(), max_id);
                 }
                 //
-                if (!current_table.equalsIgnoreCase(table)) {
+                String current_table = "";
+                ArrayList current_cdcs = new ArrayList();
+                int index = 0;
+                for (CDCModel cdc : listCDCs) {
+                    String table = cdc.getTable_name();
+                    // check if current one is blank
+                    // only case is the first cdc
+                    if (current_table.equals("")) {
+                        current_table = table;
+                    }
                     //
-                    sendCDC(host, port, cdc.getDatabase_name(), current_table, current_cdcs, offsetConnection);
-                    System.out.println(String.format("sending when index is : %s", index));
-                    // re-assign
-                    current_table = table;
-                    current_cdcs = new ArrayList();
+                    if (!current_table.equalsIgnoreCase(table)) {
+                        //
+                        sendCDC(host, port, cdc.getDatabase_name(), current_table, current_cdcs, offsetConnection);
+                        System.out.println(String.format("sending when index is : %s", index));
+                        // re-assign
+                        current_table = table;
+                        current_cdcs = new ArrayList();
+                    }
+                    current_cdcs.add(cdc);
+                    if (index == listCDCs.size() - 1) {
+                        // case when the last is the only one
+                        sendCDC(host, port, cdc.getDatabase_name(), current_table, current_cdcs, offsetConnection);
+                        System.out.println(String.format("sending when index is : %s", index));
+                    }
+                    index++;
                 }
-                current_cdcs.add(cdc);
-                if (index == listCDCs.size() - 1) {
-                    // case when the last is the only one
-                    sendCDC(host, port, cdc.getDatabase_name(), current_table, current_cdcs, offsetConnection);
-                    System.out.println(String.format("sending when index is : %s", index));
-                }
-                index++;
+                sqlUtils.updateOffset(offsetConnection, host, port, max_id);
             }
-            sqlUtils.updateOffset(offsetConnection, host, port, max_id);
+        } catch (SQLException exception) {
+            exception.printStackTrace();
+        } finally {
+            if (!Objects.isNull(sourceConnection)) {
+                sourceConnection.close();
+            }
         }
     }
 
@@ -91,11 +115,11 @@ public class CheckOffsetService {
                 Date date = new Date();
                 System.out.println("START FETCHING ALL DATABASE SOURCES: " + dateFormat.format(date));
                 System.out.println("NEXT FETCHING IN 10 SECONDS");
-                Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
-                        "cdc", "duynt", "Capstone123@"));
+//                Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+//                        "cdc", "duynt", "Capstone123@"));
                 Statement stmt = null;
                 try {
-                    stmt = configConnection.createStatement();
+                    stmt = offsetConnection.createStatement();
                     ResultSet rs = stmt.executeQuery("" +
                             "select distinct database_host, database_port,username,password\n" +
                             "from cdc.offsets as os\n" +
@@ -103,7 +127,8 @@ public class CheckOffsetService {
                             "inner join webservice_test.server_infos as si\n" +
                             "on os.database_port = di.port\n" +
                             "and si.id = di.server_info_id\n" +
-                            "and (si.server_domain = database_host or si.server_host = database_host);");
+                            "and (si.server_domain = database_host or si.server_host = database_host) " +
+                            "and si.deleted = 0 and di.deleted =0 ;");
                     while (rs.next()) {
                         String host = rs.getString("database_host");
                         String port = rs.getString("database_port");

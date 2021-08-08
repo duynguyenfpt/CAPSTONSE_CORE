@@ -176,7 +176,7 @@ public class sqlUtils {
                 "   FOR EACH ROW\n" +
                 "BEGIN \n" +
                 "   INSERT INTO %s.%s(database_url,database_port,database_name,table_name,schema,value,operation)" +
-                "VALUES('%s','%s','%s','%s','%s',%s,'%d');\n" +
+                "VALUES('%s','%s','%s','%s','%s',%s,'%d');\n " +
                 "END;";
         //
         String valueDetail = "";
@@ -296,6 +296,50 @@ public class sqlUtils {
         return null;
     }
 
+    public static Integer getLatestPostgresql(String host, String port, String username, String password) {
+        Connection connection = sqlUtils.getConnection(sqlUtils.getConnectionString(host, port, "cdc_4912929__cdc", username, password, "postgresql"));
+        String query = "SELECT max(id) as max_id from public.cdc_detail";
+        try {
+            PreparedStatement prpStmt = connection.prepareStatement(query);
+            ResultSet rs = prpStmt.executeQuery();
+            while (rs.next()) {
+                return rs.getInt("max_id");
+            }
+        } catch (SQLException sqlException) {
+            sqlException.printStackTrace();
+        }
+        return null;
+    }
+
+    public static Integer getLatestOracle(Connection sourceConnection) throws SQLException {
+        String queryCheckDB = "SELECT\n" +
+                "  table_name, owner\n" +
+                "FROM\n" +
+                "  all_tables\n" +
+                "WHERE upper(table_name)='CDC_4912929__CDC'\n" +
+                "ORDER BY\n" +
+                "  owner, table_name";
+        try {
+            //
+            Statement stmt = sourceConnection.createStatement();
+            ResultSet rs2 = stmt.executeQuery(queryCheckDB);
+            String owner = "";
+            if (rs2.next()) {
+                owner = rs2.getString("owner");
+            }
+            //
+            String query = String.format("SELECT max(id) as max_id from %s.cdc_4912929__cdc", owner);
+            PreparedStatement prpStmt = sourceConnection.prepareStatement(query);
+            ResultSet rs = prpStmt.executeQuery();
+            while (rs.next()) {
+                return rs.getInt("max_id");
+            }
+        } catch (SQLException sqlException) {
+            sqlException.printStackTrace();
+        }
+        return null;
+    }
+
     public static ArrayList<CDCModel> getCDCs(Connection connection, int offsets, int max_id) {
         ArrayList<CDCModel> listCDCs = new ArrayList<CDCModel>();
         String getDataQuery = "SELECT * FROM cdc_detail " +
@@ -303,6 +347,44 @@ public class sqlUtils {
                 "order by table_name ";
         try {
             PreparedStatement prpStmt = connection.prepareStatement(getDataQuery);
+            prpStmt.setInt(1, offsets);
+            prpStmt.setInt(2, max_id);
+            ResultSet rs = prpStmt.executeQuery();
+            while (rs.next()) {
+                listCDCs.add(
+                        new CDCModel(rs.getInt("id"), rs.getString("database_url"), rs.getString("database_port"),
+                                rs.getString("database_name"), rs.getString("table_name"), rs.getString("schema"),
+                                rs.getString("value"), rs.getInt("operation"), rs.getDate("created").getTime())
+                );
+            }
+        } catch (SQLException sqlException) {
+            sqlException.printStackTrace();
+        }
+        return listCDCs;
+    }
+
+    public static ArrayList<CDCModel> getCDCsOracle(Connection connection, int offsets, int max_id) {
+        String queryCheckDB = "SELECT\n" +
+                "  table_name, owner\n" +
+                "FROM\n" +
+                "  all_tables\n" +
+                "WHERE upper(table_name)='CDC_4912929__CDC'\n" +
+                "ORDER BY\n" +
+                "  owner, table_name";
+
+        ArrayList<CDCModel> listCDCs = new ArrayList<CDCModel>();
+        String getDataQuery = "SELECT * FROM %s.CDC_4912929__CDC " +
+                "where id > ? and id <= ? " +
+                "order by table_name ";
+        try {
+            Statement stmt = connection.createStatement();
+            ResultSet rs2 = stmt.executeQuery(queryCheckDB);
+            String owner = "";
+            if (rs2.next()) {
+                owner = rs2.getString("owner");
+            }
+            //
+            PreparedStatement prpStmt = connection.prepareStatement(String.format(getDataQuery, owner));
             prpStmt.setInt(1, offsets);
             prpStmt.setInt(2, max_id);
             ResultSet rs = prpStmt.executeQuery();
@@ -351,6 +433,50 @@ public class sqlUtils {
             prpStmt.setString(2, port);
             prpStmt.setInt(3, 0);
             prpStmt.setString(4, dbType);
+            prpStmt.executeUpdate();
+        }
+    }
+
+    public static void initOffset(Connection sourceConnection, Connection connection,
+                                  String host, String port, String dbType, String owner, String username) throws SQLException {
+        // must check exist ?
+        // if not then update rather than insert
+        System.out.println("init offset");
+        //
+        String queryCheck = "select * from cdc.`offsets` where database_host = ? and database_port = ? and owner = ? ";
+        PreparedStatement prpCheck = connection.prepareStatement(queryCheck);
+        prpCheck.setString(1, host);
+        prpCheck.setString(2, port);
+        prpCheck.setString(3, username);
+        ResultSet rs = prpCheck.executeQuery();
+
+        // get latest offset
+        int maxID = 0;
+        Statement stmt = sourceConnection.createStatement();
+        ResultSet rs2 = stmt.executeQuery(String.format("SELECT MAX(ID) as max_id FROM %s.cdc_4912929__cdc", owner));
+        if (rs2.next()) {
+            maxID = rs2.getInt("max_id");
+        }
+        //
+        if (!rs.next()) {
+            //
+            String query = "insert into " +
+                    "cdc.`offsets`(`database_host`,`database_port`,`offsets`, `dbtype`,`owner`) values (?,?,?,?,?)";
+            PreparedStatement prpStmt = connection.prepareStatement(query);
+            prpStmt.setString(1, host);
+            prpStmt.setString(2, port);
+            prpStmt.setInt(3, maxID);
+            prpStmt.setString(4, dbType);
+            prpStmt.setString(5, username);
+            prpStmt.executeUpdate();
+        } else {
+            String query = "update " +
+                    "cdc.`offsets` set offset = ? where `database_host` = ? and `database_port` = ? and `owner` = ? ";
+            PreparedStatement prpStmt = connection.prepareStatement(query);
+            prpStmt.setInt(1, maxID);
+            prpStmt.setString(2, host);
+            prpStmt.setString(3, port);
+            prpStmt.setString(4, owner);
             prpStmt.executeUpdate();
         }
     }
@@ -464,6 +590,21 @@ public class sqlUtils {
         ResultSet rs = prpStmt.executeQuery();
         while (rs.next()) {
             return rs.getString("sid");
+        }
+        return null;
+    }
+
+    public static String getDBType(String host, String port, Connection connection) throws SQLException {
+        String query = "SELECT database_type from webservice_test.database_infos di\n" +
+                "inner join webservice_test.server_infos si\n" +
+                "on si.deleted = 0 and di.deleted = 0 and di.server_info_id = si.id\n" +
+                "where si.server_host = ? and port = ? ;";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            return rs.getString("database_type");
         }
         return null;
     }
