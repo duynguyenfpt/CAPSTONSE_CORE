@@ -17,53 +17,6 @@
         <spark.version>3.0.1</spark.version>
     </properties>
     <dependencies>
-        <!-- Scala dependencies -->
-        <dependency>
-            <groupId>org.scala-lang</groupId>
-            <artifactId>scala-library</artifactId>
-            <version>${scala.version}</version>
-        </dependency>
-        <!-- Spark dependencies -->
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_${scala.compat.version}</artifactId>
-            <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.compat.version}</artifactId>
-            <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-hive_${scala.compat.version}</artifactId>
-            <version>${spark.version}</version>
-        </dependency>
-        <!-- Streaming dependencies -->
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql-kafka-0-10_${scala.compat.version}</artifactId>
-            <version>${spark.version}</version>
-        </dependency>
-        <!-- OPTIONAL: HBase dependency (only used if you want to read from HBase) -->
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-client</artifactId>
-            <version>2.2.3</version>
-        </dependency>
-        <!-- MergeService dependencies -->
-        <dependency>
-            <groupId>org.scalatest</groupId>
-            <artifactId>scalatest_${scala.compat.version}</artifactId>
-            <version>3.0.4</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.scalamock</groupId>
-            <artifactId>scalamock_${scala.compat.version}</artifactId>
-            <version>4.0.0</version>
-            <scope>test</scope>
-        </dependency>
         <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
         <dependency>
             <groupId>mysql</groupId>
@@ -71,10 +24,14 @@
             <version>8.0.25</version>
         </dependency>
         <dependency>
-            <groupId>com.holdenkarau</groupId>
-            <artifactId>spark-testing-base_${scala.compat.version}</artifactId>
-            <version>${spark.version}_1.0.0</version>
-            <scope>test</scope>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka_2.12</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.8.5</version>
         </dependency>
     </dependencies>
     <build>
@@ -88,25 +45,25 @@
                     <target>8</target>
                 </configuration>
             </plugin>
-<!--            <plugin>-->
-<!--                <groupId>org.apache.maven.plugins</groupId>-->
-<!--                <artifactId>maven-assembly-plugin</artifactId>-->
-<!--                <version>3.1.1</version>-->
-<!--                <configuration>-->
-<!--                    <descriptorRefs>-->
-<!--                        <descriptorRef>jar-with-dependencies</descriptorRef>-->
-<!--                    </descriptorRefs>-->
-<!--                </configuration>-->
-<!--                <executions>-->
-<!--                    <execution>-->
-<!--                        <id>make-assembly</id>-->
-<!--                        <phase>package</phase>-->
-<!--                        <goals>-->
-<!--                            <goal>single</goal>-->
-<!--                        </goals>-->
-<!--                    </execution>-->
-<!--                </executions>-->
-<!--            </plugin>-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.1.1</version>
+                <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

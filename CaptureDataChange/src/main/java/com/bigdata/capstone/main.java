@@ -1,14 +1,15 @@
 package com.bigdata.capstone;
 
 import models.LogModel;
-import org.apache.kafka.common.protocol.types.Field;
 import utils.db_utils.sqlUtils;
 
 import java.sql.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Objects;
 
 public class main {
     public static final String prefix = "cdc_4912929_";

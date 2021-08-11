@@ -1,17 +1,13 @@
 package com.capstone.bigdata;
 
+import models.QueryModel;
+import utils.sqlUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-
-import models.LogModel;
-import org.stringtemplate.v4.ST;
-import utils.*;
 
 public class Main {
     public static void main(String[] args) throws SQLException {
@@ -32,8 +28,26 @@ public class Main {
         int jobID = Integer.parseInt(args[8]);
         int isAll = Integer.parseInt(args[9]);
         String database_type = args[10];
-        if (isAll == 0) {
-            syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID, strID, database_type);
+        String request_type = args[11];
+        String from_date = args[12];
+        String to_date = args[13];
+        String query = args[14];
+        int request_id = Integer.parseInt(args[15]);
+        if (request_type.equalsIgnoreCase("ETLRequest")) {
+            // etl request
+            QueryModel qm = new QueryModel();
+            qm.setRequestId(request_id);
+            qm.setJobId(jobID);
+            qm.setQuery(query);
+            qm.setEtlID(strID);
+            sqlUtils.requestProducer("localhost:9092", "etl-query", qm);
+        } else {
+            if (isAll == 0) {
+                // sync all request
+                syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID, strID, database_type);
+            } else {
+                // sync partially
+            }
         }
     }
 
@@ -72,22 +86,22 @@ public class Main {
         sqlUtils.updateJobStatus(configConnection, jobID, "success");
     }
 
-    public static void sendLogs(int step, String status, String message, LogModel log) {
-        log.setStep(step);
-        log.setStatus(status);
-        log.setMessage(message);
-        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS");
-        Date date = new Date();
-        log.setCreate_time(dateFormat.format(date));
-        if (status.equals("success")) {
-            log.setStatusOrder(3);
-        } else if (status.equals("fail")) {
-            log.setStatusOrder(2);
-        } else if (status.equals("processing")) {
-            log.setStatusOrder(1);
-        }
-        sqlUtils.logProducer("localhost:9092", "jobs_log", log);
-    }
+//    public static void sendLogs(int step, String status, String message, LogModel log) {
+//        log.setStep(step);
+//        log.setStatus(status);
+//        log.setMessage(message);
+//        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS");
+//        Date date = new Date();
+//        log.setCreate_time(dateFormat.format(date));
+//        if (status.equals("success")) {
+//            log.setStatusOrder(3);
+//        } else if (status.equals("fail")) {
+//            log.setStatusOrder(2);
+//        } else if (status.equals("processing")) {
+//            log.setStatusOrder(1);
+//        }
+//        sqlUtils.logProducer("localhost:9092", "jobs_log", log);
+//    }
 
     public static void runCommand(String cmdToExecute) {
         String osName = System.getProperty("os.name");

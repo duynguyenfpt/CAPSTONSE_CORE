@@ -461,7 +461,6 @@ public class TriggerService {
             sqlUtils.logProducer("localhost:9092", "jobs_log", log);
             sqlUtils.logProducer("localhost:9092", "jobs_log", log);
         } else if (status.equals("fail")) {
-            System.out.println("hello holle");
             log.setStatusOrder(2);
             sqlUtils.logProducer("localhost:9092", "jobs_log", log);
             TableMonitor tm = new TableMonitor();

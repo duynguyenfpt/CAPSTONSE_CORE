@@ -15,6 +15,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.hadoop.fs.*;
+
 import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.from_json;
 
@@ -39,14 +41,15 @@ public class ETLService {
         HashMap<String, String> aliasHashMap = new HashMap<>();
         while (rs.next()) {
             String path = String.format("/user/%s/%s/%s/%s/%s/", rs.getString("database_type"),
-                    rs.getString("database_type"), rs.getString("server_host"),
+                    rs.getString("server_host"), rs.getString("port"),
                     rs.getString("database_name"), rs.getString("table_name"));
             // set up alias
             try {
                 String queryAlias = ":" + rs.getString("alias") + "." + rs.getString("table_name") + ":";
                 String alias = "table" + rs.getInt("table_id");
                 // create temp view in spark
-                sparkSession.read().parquet(path).createOrReplaceGlobalTempView(alias);
+                System.out.println(path);
+                sparkSession.read().parquet(path).createOrReplaceTempView(alias);
                 System.out.println(String.format("%s alias as: %s - path: ", queryAlias, alias, path));
                 aliasHashMap.put(queryAlias, alias);
             } catch (Exception exception) {
@@ -66,7 +69,9 @@ public class ETLService {
                         .load();
         //
         StructType querySchema = DataTypes.createStructType(new StructField[]{
-                DataTypes.createStructField("id", DataTypes.StringType, false),
+                DataTypes.createStructField("jobId", DataTypes.IntegerType, false),
+                DataTypes.createStructField("requestId", DataTypes.IntegerType, true),
+                DataTypes.createStructField("etlID", DataTypes.IntegerType, true),
                 DataTypes.createStructField("query", DataTypes.StringType, true)
         });
         //
@@ -82,13 +87,53 @@ public class ETLService {
                             dataset.show(false);
                             List<Row> list_request = dataset.collectAsList();
                             for (Row row : list_request) {
-                                String id = row.getAs("id");
-                                String query = row.getAs("query");
-                                // query parser
-                                query = queryTableConverter(query, aliasHashMap);
-                                System.out.println(String.format("new query: " + query));
-                                //
-                                sparkSession.sql(query).show();
+                                try {
+                                    int jobId = row.getAs("jobId");
+                                    int requestId = row.getAs("requestId");
+                                    int etlID = row.getAs("etlID");
+                                    String query = row.getAs("query");
+                                    // query parser
+                                    query = queryTableConverter(query, aliasHashMap);
+                                    String path = String.format("/user/etl_query/id_%d_%d/", requestId, jobId);
+                                    // execute query
+                                    Dataset<Row> result = sparkSession.sql(query);
+                                    long total = result.count();
+                                    result
+                                            .coalesce(1)
+                                            .write()
+                                            .mode("overwrite")
+                                            .option("header", true)
+                                            .csv(path);
+                                    //
+                                    FileSystem fs = FileSystem.get(sparkSession.sparkContext().hadoopConfiguration());
+                                    RemoteIterator<LocatedFileStatus> listFiles = fs.listFiles(new Path(path), false);
+                                    String fileName = "";
+                                    while (listFiles.hasNext()) {
+                                        fileName = listFiles.next().getPath().getName();
+                                        if (!fileName.equalsIgnoreCase("_SUCCESS")) {
+                                            break;
+                                        }
+                                    }
+
+                                    // set status success
+                                    System.out.println("update status");
+                                    String updateQuery = "update webservice_test.jobs set status = 'success' where id = ?";
+                                    PreparedStatement prpStmt = configConnection.prepareStatement(updateQuery);
+                                    prpStmt.setInt(1, jobId);
+                                    prpStmt.executeUpdate();
+                                    //
+                                    System.out.println("update path");
+                                    String updateQuery2 = "update webservice_test.etl_request set result_path = ?,total_rows = ? where id = ?";
+                                    PreparedStatement prpStmt2 = configConnection.prepareStatement(updateQuery2);
+                                    prpStmt2.setString(1, path + fileName);
+                                    prpStmt2.setLong(2, total);
+                                    prpStmt2.setInt(3, etlID);
+                                    prpStmt2.executeUpdate();
+                                    //
+                                    System.out.println("done hehe");
+                                } catch (Exception exception) {
+                                    exception.printStackTrace();
+                                }
                             }
                         } catch (Exception exception) {
                             exception.printStackTrace();
