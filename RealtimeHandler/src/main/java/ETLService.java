@@ -7,6 +7,8 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,10 +89,10 @@ public class ETLService {
                             dataset.show(false);
                             List<Row> list_request = dataset.collectAsList();
                             for (Row row : list_request) {
+                                int jobId = row.getAs("jobId");
+                                int requestId = row.getAs("requestId");
+                                int etlID = row.getAs("etlID");
                                 try {
-                                    int jobId = row.getAs("jobId");
-                                    int requestId = row.getAs("requestId");
-                                    int etlID = row.getAs("etlID");
                                     String query = row.getAs("query");
                                     // query parser
                                     query = queryTableConverter(query, aliasHashMap);
@@ -123,7 +125,7 @@ public class ETLService {
                                     prpStmt.executeUpdate();
                                     //
                                     System.out.println("update path");
-                                    String updateQuery2 = "update webservice_test.etl_request set result_path = ?,total_rows = ? where id = ?";
+                                    String updateQuery2 = "update webservice_test.etl_request set result_path = ?,total_rows = ?, status = 'successed' where id = ?";
                                     PreparedStatement prpStmt2 = configConnection.prepareStatement(updateQuery2);
                                     prpStmt2.setString(1, path + fileName);
                                     prpStmt2.setLong(2, total);
@@ -132,11 +134,29 @@ public class ETLService {
                                     //
                                     System.out.println("done hehe");
                                 } catch (Exception exception) {
-                                    exception.printStackTrace();
+                                    StringWriter sw = new StringWriter();
+                                    PrintWriter pw = new PrintWriter(sw);
+                                    exception.printStackTrace(pw);
+                                    String sStackTrace = sw.toString();
+                                    //
+                                    sStackTrace = sStackTrace.substring(0, Math.min(300, sStackTrace.length()));
+                                    System.out.println("update status failed");
+                                    String updateQuery = "update webservice_test.jobs set status = 'fail' where id = ?";
+                                    PreparedStatement prpStmt = configConnection.prepareStatement(updateQuery);
+                                    prpStmt.setInt(1, jobId);
+                                    prpStmt.executeUpdate();
+                                    //
+                                    System.out.println("update message failed");
+                                    String updateQuery2 = "update webservice_test.etl_request set message_fail = ?, status = 'failed' where id = ?";
+                                    PreparedStatement prpStmt2 = configConnection.prepareStatement(updateQuery2);
+                                    prpStmt2.setString(1, sStackTrace);
+                                    prpStmt2.setInt(2, etlID);
+                                    prpStmt2.executeUpdate();
+                                    //
                                 }
                             }
                         } catch (Exception exception) {
-                            exception.printStackTrace();
+
                         }
                     }
                 })

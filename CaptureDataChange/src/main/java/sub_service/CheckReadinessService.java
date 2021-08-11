@@ -19,9 +19,8 @@ import java.util.concurrent.TimeUnit;
 public class CheckReadinessService {
     public static void main(String[] args) throws SQLException {
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
-        Connection connection = sqlUtils.getConnection(
-                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@")
-        );
+        ConnectionSingleton cs = ConnectionSingleton.getInstance();
+        Connection connection = cs.connection;
         exec.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {

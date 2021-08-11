@@ -105,8 +105,8 @@ public class CheckOffsetService {
 
     public static void main(String[] args) {
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
-        Connection offsetConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
-                "cdc", "duynt", "Capstone123@"));
+        ConnectionSingleton cs = ConnectionSingleton.getInstance();
+        Connection offsetConnection = cs.connection;
 
         exec.scheduleAtFixedRate(new Runnable() {
             @Override

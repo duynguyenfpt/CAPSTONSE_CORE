@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit;
 
 public class CheckJob {
     public static void main(String[] args) {
+        ConnectionSingleton cs = ConnectionSingleton.getInstance();
+        Connection configConnection = cs.connection;
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
         exec.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -62,8 +64,7 @@ public class CheckJob {
                             "on jobs.request_id = str.request_id\n" +
                             "and jobs.request_id = req.id\n" +
                             "and req.request_type = 'ETLRequest';";
-                    Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
-                            "cdc", "duynt", "Capstone123@"));
+
                     Statement stmt = configConnection.createStatement();
                     ResultSet rs = stmt.executeQuery(query);
                     while (rs.next()) {
