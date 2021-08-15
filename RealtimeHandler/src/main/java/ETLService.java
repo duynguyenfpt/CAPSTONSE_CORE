@@ -2,6 +2,7 @@ import org.apache.spark.api.java.function.VoidFunction2;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.api.java.UDF2;
 import org.apache.spark.sql.streaming.StreamingQueryException;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
@@ -18,11 +19,26 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.fs.*;
+import scala.Serializable;
 
 import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.from_json;
 
-public class ETLService {
+public class ETLService implements Serializable {
+    public static void regisUDF(SparkSession sparkSession) {
+        sparkSession.udf().register("capstone_percent_recover", new UDF2<Double, Double, Double>() {
+            @Override
+            public Double call(Double confirm, Double recover) throws Exception {
+                if (confirm == 0.0) {
+                    return 0.0;
+                }
+                return recover / confirm * 100;
+            }
+        }, DataTypes.DoubleType);
+
+
+    }
+
     public static void main(String[] args) throws SQLException, TimeoutException, StreamingQueryException {
         SparkSession sparkSession = SparkSession
                 .builder()
@@ -34,6 +50,7 @@ public class ETLService {
         String topic = "etl-query";
         sparkSession.conf().set("spark.sql.sources.partitionOverwriteMode", "dynamic");
         //
+        regisUDF(sparkSession);
         //
         Connection configConnection = sqlUtils.getConnection(
                 sqlUtils.getConnectionString("localhost", "3306", "cdc",
@@ -52,7 +69,7 @@ public class ETLService {
                 // create temp view in spark
                 System.out.println(path);
                 sparkSession.read().parquet(path).createOrReplaceTempView(alias);
-                System.out.println(String.format("%s alias as: %s - path: ", queryAlias, alias, path));
+                System.out.println(String.format("%s alias as: %s - path: %s", queryAlias, alias, path));
                 aliasHashMap.put(queryAlias, alias);
             } catch (Exception exception) {
                 exception.printStackTrace();
@@ -96,6 +113,7 @@ public class ETLService {
                                     String query = row.getAs("query");
                                     // query parser
                                     query = queryTableConverter(query, aliasHashMap);
+                                    System.out.println(query);
                                     String path = String.format("/user/etl_query/id_%d_%d/", requestId, jobId);
                                     // execute query
                                     Dataset<Row> result = sparkSession.sql(query);
@@ -179,8 +197,7 @@ public class ETLService {
     }
 
     public static String queryTableConverter(String tableQuery, HashMap<String, String> aliasHM) throws SQLException {
-        ArrayList<String> result = new ArrayList<>();
-        Pattern pattern = Pattern.compile(":[a-zA-Z1-9.]+:");
+        Pattern pattern = Pattern.compile(":[a-zA-Z1-9._]+:");
         Matcher matcher = pattern.matcher(tableQuery);
         while (matcher.find()) {
             String queryAlias = matcher.group(0);

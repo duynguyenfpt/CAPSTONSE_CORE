@@ -9,6 +9,8 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.api.java.UDF1;
+import org.apache.spark.sql.api.java.UDF2;
 import org.apache.spark.sql.expressions.Window;
 import org.apache.spark.sql.expressions.WindowSpec;
 import org.apache.spark.sql.types.DataTypes;
@@ -18,6 +20,7 @@ import org.apache.spark.sql.types.StructType;
 import static org.apache.spark.sql.functions.*;
 
 import org.apache.spark.sql.streaming.*;
+import scala.Serializable;
 import scala.collection.JavaConverters;
 
 import java.sql.Connection;
@@ -33,7 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class TriggerService {
+public class TriggerService implements Serializable {
+
     public static void main(String[] args) throws TimeoutException, StreamingQueryException {
         SparkSession sparkSession = SparkSession
                 .builder()

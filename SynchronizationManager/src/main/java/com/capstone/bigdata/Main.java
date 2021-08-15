@@ -71,7 +71,7 @@ public class Main {
         System.out.println("DONE INGEST");
 //        // do snapshot
         System.out.println("START SNAPSHOT");
-        String cmd = String.format("spark-submit --master yarn --class SparkWriter --num-executors 1 --executor-cores 2 --executor-memory 1G " +
+        String cmd = String.format("spark-submit --master yarn --class SparkWriter --num-executors 1 --executor-cores 2 --executor-memory 512M " +
                 "--driver-class-path jars/kafka-clients-2.4.1.jar:jars/mysql-connector-java-8.0.25.jar:jars/postgresql-42.2.23.jar:jars/ojdbc8-12.2.0.1.jar " +
                 "--jars jars/mysql-connector-java-8.0.25.jar,jars/ojdbc8-12.2.0.1.jar,jars/postgresql-42.2.23.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
                 "%s %s %s %s %s %s %s %d %d %s", dbName, tableName, username, password, host, port, partitionBy, jobID, strID, database_type);
