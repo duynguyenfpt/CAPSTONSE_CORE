@@ -10,14 +10,13 @@ import java.util.UUID;
 
 public class Test {
     public static void main(String[] args) throws SQLException {
-        String query = "select distinct database_host, database_port,username,password\n" +
-                "from cdc.offsets as os\n" +
-                "inner join webservice_test.database_infos as di\n" +
-                "inner join webservice_test.server_infos as si\n" +
-                "on os.database_port = di.port\n" +
-                "and si.id = di.server_info_id\n" +
-                "and (si.server_domain = database_host or si.server_host = database_host) " +
-                "and si.deleted = 0 and di.deleted =0 ;";
-        System.out.println(query);
+        String query = "SELECT * FROM cdc_4912929__cdc.cdc_detail";
+        Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("10.8.0.1", "3306",
+                "cdc", "duynt", "Capstone123@"));
+        Statement stmt = configConnection.createStatement();
+        ResultSet rs = stmt.executeQuery(query);
+        while (rs.next()){
+            System.out.println(rs.getTimestamp("created").getTime() / 1000);
+        }
     }
 }

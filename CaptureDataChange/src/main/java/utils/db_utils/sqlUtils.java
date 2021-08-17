@@ -354,7 +354,7 @@ public class sqlUtils {
                 listCDCs.add(
                         new CDCModel(rs.getInt("id"), rs.getString("database_url"), rs.getString("database_port"),
                                 rs.getString("database_name"), rs.getString("table_name"), rs.getString("schema"),
-                                rs.getString("value"), rs.getInt("operation"), rs.getDate("created").getTime())
+                                rs.getString("value"), rs.getInt("operation"), rs.getTimestamp("created").getTime() / 1000)
                 );
             }
         } catch (SQLException sqlException) {
@@ -392,7 +392,7 @@ public class sqlUtils {
                 listCDCs.add(
                         new CDCModel(rs.getInt("id"), rs.getString("database_url"), rs.getString("database_port"),
                                 rs.getString("database_name"), rs.getString("table_name"), rs.getString("schema"),
-                                rs.getString("value"), rs.getInt("operation"), rs.getDate("created").getTime())
+                                rs.getString("value"), rs.getInt("operation"), rs.getTimestamp("created").getTime() / 1000)
                 );
             }
         } catch (SQLException sqlException) {

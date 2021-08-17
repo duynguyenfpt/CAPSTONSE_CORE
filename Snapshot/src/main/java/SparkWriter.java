@@ -12,11 +12,14 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Objects;
 
 import static org.apache.spark.sql.functions.*;
 
+import scala.collection.JavaConverters;
 import utils.*;
 
 public class SparkWriter {
@@ -79,9 +82,10 @@ public class SparkWriter {
 
             if (!partitionBy.equals(" ")) {
                 System.out.println("do this");
+                ArrayList<String> listPartition = new ArrayList<>(Arrays.asList(partitionBy.split(",")));
                 input.write()
                         .mode("overwrite")
-                        .partitionBy(partitionBy)
+                        .partitionBy(JavaConverters.asScalaIteratorConverter(listPartition.iterator()).asScala().toSeq())
                         .parquet(path);
             } else {
                 System.out.println("do that");

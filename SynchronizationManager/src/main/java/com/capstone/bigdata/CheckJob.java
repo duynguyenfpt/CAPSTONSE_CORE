@@ -21,7 +21,11 @@ public class CheckJob {
         ConnectionSingleton cs = ConnectionSingleton.getInstance();
         Connection configConnection = cs.connection;
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
-        exec.scheduleAtFixedRate(new Runnable() {
+        exec.scheduleAtFixedRate(getRunnable(configConnection), 0, 10, TimeUnit.SECONDS);
+    }
+
+    public static Runnable getRunnable(Connection configConnection) {
+        return new Runnable() {
             @Override
             public void run() {
                 try {
@@ -115,7 +119,7 @@ public class CheckJob {
                     sqlException.printStackTrace();
                 }
             }
-        }, 0, 10, TimeUnit.SECONDS);
+        };
     }
 
     public static void runCommand(String cmdToExecute) {
