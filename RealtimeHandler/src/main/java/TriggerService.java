@@ -1,5 +1,9 @@
 import models.LogModel;
 import models.TableMonitor;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.spark.SparkException;
 import org.apache.spark.api.java.function.VoidFunction2;
 import org.apache.spark.sql.Dataset;
@@ -18,6 +22,8 @@ import org.apache.spark.sql.streaming.*;
 import scala.Serializable;
 import scala.collection.JavaConverters;
 
+import java.io.IOException;
+import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -56,6 +62,16 @@ public class TriggerService implements Serializable {
                 DataTypes.createStructField("server_host", DataTypes.StringType, false),
                 DataTypes.createStructField("port", DataTypes.StringType, true),
                 DataTypes.createStructField("table", DataTypes.StringType, true),
+                DataTypes.createStructField("databaseType", DataTypes.StringType, true),
+                DataTypes.createStructField("database", DataTypes.StringType, true),
+                DataTypes.createStructField("username", DataTypes.StringType, true),
+                DataTypes.createStructField("mergeTable", DataTypes.StringType, true),
+        });
+
+        StructType merge_schema = DataTypes.createStructType(new StructField[]{
+                DataTypes.createStructField("host", DataTypes.StringType, false),
+                DataTypes.createStructField("port", DataTypes.StringType, true),
+                DataTypes.createStructField("table", DataTypes.StringType, true),
                 DataTypes.createStructField("database_type", DataTypes.StringType, true),
                 DataTypes.createStructField("identity_key", DataTypes.StringType, true),
                 DataTypes.createStructField("partition_by", DataTypes.StringType, true),
@@ -79,13 +95,13 @@ public class TriggerService implements Serializable {
                                     .withColumn("extract", from_json(col("value").cast("string"), message_schema))
                                     .select(col("extract.*"))
                                     .distinct()
-                                    .withColumn("topic"
+                                    .withColumn("topic_cdc"
                                             , concat_ws("-", lit("cdc"), col("server_host"), col("port"),
                                                     col("database"), col("table")));
                             //
                             System.out.println("Execute Distinct: " + dataset.count());
                             //
-                            dataset.select("topic").show(false);
+                            dataset.select("topic_cdc").show(false);
                             dataset.show();
                             List<Row> list_request = dataset.collectAsList();
                             //
@@ -100,7 +116,7 @@ public class TriggerService implements Serializable {
                                     String partitionBy = row.getAs("partition_by");
                                     //
                                     int latest_offset = row.getAs("latest_offset");
-                                    String topic_req = row.getAs("topic");
+                                    String topic_req = row.getAs("topic_cdc");
                                     String so = String.format("{\"%s\":{\"0\":%d}}", topic_req, latest_offset);
                                     System.out.println(so);
                                     StructType data_schema = DataTypes.createStructType(new StructField[]{
@@ -651,7 +667,40 @@ public class TriggerService implements Serializable {
                                 }
                             }
                             // processing merge request when new table is assigned
-                            Dataset<Row> mergeDS = dataset.filter("topic = 'merge-request'");
+                            try {
+                                Dataset<Row> mergeDS = requestedDataset.filter("topic = 'merge-request'")
+                                        .withColumn("extract", from_json(col("value").cast("string"), merge_schema))
+                                        .select(col("extract.*"));
+                                mergeDS.show();
+                                //
+                                List<Row> list_merge_request = mergeDS.collectAsList();
+                                for (Row row : list_merge_request) {
+                                    String databaseType = row.getAs("databaseType");
+                                    String host = row.getAs("host");
+                                    String port = row.getAs("port");
+                                    String database = row.getAs("database");
+                                    String username = row.getAs("username");
+                                    String table = row.getAs("table");
+                                    String mergeTable = row.getAs("mergeTable");
+                                    String path = "";
+                                    String mergePath = String.format("/user/merge_request/%s", mergeTable);
+                                    if (!databaseType.equals("oracle")) {
+                                        path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, database, table);
+                                    } else {
+                                        path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, username, table);
+                                    }
+                                    if (checkPath(mergePath)) {
+                                        // if there is exist merge request
+                                    } else {
+                                        // otherwise
+                                    }
+
+                                }
+
+                            } catch (Exception exception) {
+
+                            }
+                            //
                         } catch (Exception exception) {
                             System.out.println(exception.getMessage());
                             DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
@@ -662,6 +711,24 @@ public class TriggerService implements Serializable {
                 })
                 .start()
                 .awaitTermination();
+    }
+
+    private static Boolean checkPath(String uri) {
+        Configuration conf = new Configuration();
+        conf.addResource(new Path("/etc/hadoop/conf/hdfs-site.xml"));
+        conf.addResource(new Path("/etc/hadoop/conf/core-site.xml"));
+        conf.set("hadoop.security.authentication", "kerberos");
+        conf.set("fs.defaultFS", "hdfs://127.0.0.1:9000");
+        try {
+            FileSystem fs = FileSystem.get(URI.create(uri), conf);
+            FileStatus[] fileStatuses = fs.globStatus(new Path(uri));
+            if (fileStatuses == null) return false;
+            // Check if folder exists at the given location
+            return fileStatuses.length > 0;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     public static void sendLogs(int step, String status, String message, LogModel log, Row row, Connection connection) throws SQLException {

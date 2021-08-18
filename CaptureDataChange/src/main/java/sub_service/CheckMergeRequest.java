@@ -76,6 +76,7 @@ public class CheckMergeRequest {
                                 createSyncRequest(connection, listTablesChange.get(index), requestMergeID);
                             }
                         }
+                        createJobs(connection, requestMergeID);
                     }
                 } catch (Exception exception) {
                     exception.printStackTrace();
@@ -93,13 +94,16 @@ public class CheckMergeRequest {
         prpStmt.setInt(2, requestID);
         prpStmt.executeUpdate();
         System.out.println("insert sync_table_request successfully");
+    }
+
+    private static void createJobs(Connection connection, int requestID) throws SQLException {
         // insert jobs table
-//        String insertJobs = "Insert into webservice_test.jobs(is_active,max_retries,executed_by,created_by,request_id,status,number_retries,deleted) " +
-//                "values (1,10,20,'longvt',?,'pending',0,0)";
-//        PreparedStatement prpStmt2 = connection.prepareStatement(insertJobs);
-//        prpStmt2.setInt(1, requestID);
-//        prpStmt2.executeUpdate();
-//        System.out.println("insert jobs successfully");
+        String insertJobs = "Insert into webservice_test.jobs(is_active,max_retries,executed_by,created_by,request_id,status,number_retries,deleted) " +
+                "values (1,10,20,'longvt',?,'pending',0,0)";
+        PreparedStatement prpStmt2 = connection.prepareStatement(insertJobs);
+        prpStmt2.setInt(1, requestID);
+        prpStmt2.executeUpdate();
+        System.out.println("insert jobs successfully");
     }
 
     private static Boolean checkPath(String uri) {

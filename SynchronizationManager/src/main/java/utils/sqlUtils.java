@@ -2,6 +2,7 @@ package utils;
 
 import com.google.gson.Gson;
 import models.LogModel;
+import models.MergeRequestModel;
 import models.QueryModel;
 import models.ReadinessModel;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -31,6 +32,8 @@ public class sqlUtils {
         System.out.println("connected");
         return conn;
     }
+
+    //
 
     //
     public static void insertJobLog(Connection connection, String job_id, int step_id, String step_name, int status) throws SQLException {
@@ -145,7 +148,7 @@ public class sqlUtils {
         preparedStatement.executeUpdate();
     }
 
-    public static void logProducer(String kafkaCluster, String kafkaTopic, LogModel log) {
+    public static void mergeRequestProducer(String kafkaCluster, String kafkaTopic, MergeRequestModel rmr) {
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaCluster);
         props.put(ProducerConfig.ACKS_CONFIG, "all");
@@ -162,8 +165,7 @@ public class sqlUtils {
                 "org.apache.kafka.common.serialization.StringSerializer");
         Producer<String, String> producer = new KafkaProducer<String, String>(props);
         Gson gson = new Gson();
-        producer.send(new ProducerRecord<String, String>(kafkaTopic, log.getHost() + "-" + log.getPort() + "-"
-                + log.getDatabase_name() + "-" + log.getTable_name(), gson.toJson(log)));
+        producer.send(new ProducerRecord<String, String>(kafkaTopic, rmr.getMergeTable(), gson.toJson(rmr)));
         producer.close();
     }
 

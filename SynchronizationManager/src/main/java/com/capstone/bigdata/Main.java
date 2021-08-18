@@ -1,5 +1,7 @@
 package com.capstone.bigdata;
 
+import com.google.gson.Gson;
+import models.MergeRequestModel;
 import models.QueryModel;
 import models.ReadinessModel;
 import utils.sqlUtils;
@@ -8,6 +10,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 
@@ -46,7 +50,7 @@ public class Main {
         } else {
             if (isAll == 0) {
                 // sync all request
-                syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID, strID, database_type);
+                syncAll(host, port, username, password, tableName, dbName, partitionBy, jobID, strID, database_type, request_id);
             } else {
                 // sync partially
             }
@@ -54,7 +58,7 @@ public class Main {
     }
 
     public static void syncAll(String host, String port, String username, String password
-            , String tableName, String dbName, String partitionBy, int jobID, int strID, String database_type) throws SQLException {
+            , String tableName, String dbName, String partitionBy, int jobID, int strID, String database_type, int request_id) throws SQLException {
         // update job status
         Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
                 "cdc", "duynt", "Capstone123@"));
@@ -81,9 +85,31 @@ public class Main {
 //        runCommand(cmd);
         System.out.println("DONE SNAPSHOT");
         // finish snapshot then make join for merge request
+        /*
+         * if (request comes from merge request):
+         *   send a request to merge
+         *
+         *
+         * */
+        PreparedStatement prpStmt = configConnection.prepareStatement("SELECT merge_table_name FROM webservice_test.merge_requests mr\n" +
+                "INNER JOIN  webservice_test.request req\n" +
+                "on mr.request_type_id = req.id\n" +
+                "where request_type_id = ? ");
+        prpStmt.setInt(1, request_id);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            MergeRequestModel mrm = new MergeRequestModel();
+            mrm.setHost(host);
+            mrm.setPort(port);
+            mrm.setDatabase(port);
+            mrm.setTable(tableName);
+            mrm.setDatabaseType(database_type);
+            mrm.setMergeTable(rs.getString("merge_table_name"));
+            mrm.setUsername(username);
+            sqlUtils.mergeRequestProducer("localhost:9092", "merge-request", mrm);
+            break;
+        }
 
-        //
-        System.out.println("LINH LE");
         try {
             sqlUtils.updateIsProcess(configConnection, strID);
             ArrayList<ReadinessModel> listRemains = sqlUtils.checkRemainRequest(configConnection, jobID);
@@ -110,23 +136,6 @@ public class Main {
             exception.printStackTrace();
         }
     }
-
-//    public static void sendLogs(int step, String status, String message, LogModel log) {
-//        log.setStep(step);
-//        log.setStatus(status);
-//        log.setMessage(message);
-//        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS");
-//        Date date = new Date();
-//        log.setCreate_time(dateFormat.format(date));
-//        if (status.equals("success")) {
-//            log.setStatusOrder(3);
-//        } else if (status.equals("fail")) {
-//            log.setStatusOrder(2);
-//        } else if (status.equals("processing")) {
-//            log.setStatusOrder(1);
-//        }
-//        sqlUtils.logProducer("localhost:9092", "jobs_log", log);
-//    }
 
     public static void runCommand(String cmdToExecute) {
         String osName = System.getProperty("os.name");
