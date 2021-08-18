@@ -1,6 +1,7 @@
 package com.capstone.bigdata;
 
 import models.QueryModel;
+import models.ReadinessModel;
 import utils.sqlUtils;
 
 import java.io.BufferedReader;
@@ -8,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 
 public class Main {
     public static void main(String[] args) throws SQLException {
@@ -76,14 +78,37 @@ public class Main {
                 "--jars jars/mysql-connector-java-8.0.25.jar,jars/ojdbc8-12.2.0.1.jar,jars/postgresql-42.2.23.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
                 "%s %s %s %s %s %s %s %d %d %s", dbName, tableName, username, password, host, port, partitionBy, jobID, strID, database_type);
         System.out.println(cmd);
-        runCommand(cmd);
+//        runCommand(cmd);
         System.out.println("DONE SNAPSHOT");
-        System.out.println("UPDATE READINESS");
-        Connection connection = sqlUtils.getConnection(
-                sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
-        sqlUtils.updateReady(host, port, dbName, tableName, connection, 1);
-        System.out.println("DONE UPDATING ACTIVENESS");
-        sqlUtils.updateJobStatus(configConnection, jobID, "success");
+        // finish snapshot then make join for merge request
+
+        //
+        System.out.println("LINH LE");
+        try {
+            sqlUtils.updateIsProcess(configConnection, strID);
+            ArrayList<ReadinessModel> listRemains = sqlUtils.checkRemainRequest(configConnection, jobID);
+            System.out.println(listRemains.size());
+            int countProcessed = 0;
+            for (ReadinessModel rm : listRemains) {
+                if (rm.getIsProcess() == 0) {
+                    countProcessed++;
+                }
+            }
+            Connection connection = sqlUtils.getConnection(
+                    sqlUtils.getConnectionString("localhost", "3306", "cdc", "duynt", "Capstone123@"));
+            System.out.println("number remain requests: " + countProcessed);
+            if (countProcessed == 0) {
+                System.out.println("UPDATE READINESS");
+                for (ReadinessModel rm : listRemains) {
+                    System.out.println(rm);
+                    sqlUtils.updateReady(rm.getHost(), rm.getPort(), rm.getDatabase(), rm.getTable(), connection, 1);
+                }
+                System.out.println("DONE UPDATING ACTIVENESS");
+                sqlUtils.updateJobStatus(configConnection, jobID, "success");
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
     }
 
 //    public static void sendLogs(int step, String status, String message, LogModel log) {

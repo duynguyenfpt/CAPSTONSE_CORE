@@ -41,7 +41,7 @@ public class CheckJob {
                             "(SELECT * FROM webservice_test.jobs\n" +
                             "where number_retries < max_retries and status = 'pending' and deleted = 0) as jobs\n" +
                             "INNER JOIN\n" +
-                            "(select is_all,id,request_id,partition_by,table_id, null as query,from_date,to_date from webservice_test.sync_table_requests \n" +
+                            "(select is_all,id,request_id,partition_by,table_id, null as query,from_date,to_date from webservice_test.sync_table_requests where is_process = 0 \n" +
                             ") str \n" +
                             "INNER JOIN\n" +
                             "webservice_test.tables tbls\n" +

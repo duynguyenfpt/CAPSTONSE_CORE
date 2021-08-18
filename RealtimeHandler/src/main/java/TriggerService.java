@@ -40,7 +40,7 @@ public class TriggerService implements Serializable {
         sparkSession.sparkContext().setLogLevel("ERROR");
         String bootstrapServer = "localhost:9092";
         String startingOffsets = "latest";
-        String topic = "cdc-table-change-test";
+        String topic = "cdc-table-change-test,merge-request";
         sparkSession.conf().set("spark.sql.sources.partitionOverwriteMode", "dynamic");
         Dataset<Row> readDF =
                 sparkSession.readStream()
@@ -72,9 +72,10 @@ public class TriggerService implements Serializable {
                 .writeStream()
                 .foreachBatch(new VoidFunction2<Dataset<Row>, Long>() {
                     @Override
-                    public void call(Dataset<Row> dataset, Long aLong) throws Exception {
+                    public void call(Dataset<Row> requestedDataset, Long aLong) throws Exception {
                         try {
-                            dataset = dataset
+                            Dataset<Row> dataset = requestedDataset
+                                    .filter("topic = 'cdc-table-change-test'")
                                     .withColumn("extract", from_json(col("value").cast("string"), message_schema))
                                     .select(col("extract.*"))
                                     .distinct()
@@ -649,6 +650,8 @@ public class TriggerService implements Serializable {
                                     // retrying
                                 }
                             }
+                            // processing merge request when new table is assigned
+                            Dataset<Row> mergeDS = dataset.filter("topic = 'merge-request'");
                         } catch (Exception exception) {
                             System.out.println(exception.getMessage());
                             DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");

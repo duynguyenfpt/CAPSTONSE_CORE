@@ -39,6 +39,11 @@
             <artifactId>mongodb-driver-sync</artifactId>
             <version>${mongodb-driver-sync.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
+            <version>3.3.0</version>
+        </dependency>
     </dependencies>
     <properties>
         <maven.compiler.source>16</maven.compiler.source>

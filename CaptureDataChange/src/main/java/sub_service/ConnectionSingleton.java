@@ -13,7 +13,7 @@ public class ConnectionSingleton {
 
     // private constructor restricted to this class itself
     private ConnectionSingleton() {
-        connection = sqlUtils.getConnection(sqlUtils.getConnectionString("localhost", "3306",
+        connection = sqlUtils.getConnection(sqlUtils.getConnectionString("10.8.0.1", "3306",
                 "cdc", "duynt", "Capstone123@"));
     }
 
