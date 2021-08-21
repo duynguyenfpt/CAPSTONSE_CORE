@@ -1,15 +1,16 @@
 package models;
 
 import java.util.ArrayList;
-import java.util.List;
 
 public class MappingModel {
     private String colName;
     private ArrayList<String> listCol;
+    private int is_unique;
 
-    public MappingModel(String colName, ArrayList<String> listCol) {
+    public MappingModel(String colName, ArrayList<String> listCol, int is_unique) {
         this.colName = colName;
         this.listCol = listCol;
+        this.is_unique = is_unique;
     }
 
     public MappingModel() {
@@ -29,5 +30,13 @@ public class MappingModel {
 
     public void setListCol(ArrayList<String> listCol) {
         this.listCol = listCol;
+    }
+
+    public int getIs_unique() {
+        return is_unique;
+    }
+
+    public void setIs_unique(int is_unique) {
+        this.is_unique = is_unique;
     }
 }

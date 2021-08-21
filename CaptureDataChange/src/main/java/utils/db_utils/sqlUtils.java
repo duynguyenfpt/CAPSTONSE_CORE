@@ -224,7 +224,7 @@ public class sqlUtils {
                 "  AS\n" +
                 "$$\n" +
                 "BEGIN\n" +
-                "    perform dblink_connect('connection','hostaddr=127.0.0.1 port=%s dbname=%s user=%s password=%s');\n" +
+                "  perform dblink_connect('connection','hostaddr=%s port=%s dbname=%s user=%s password=%s');\n" +
                 "\tperform dblink_exec('connection','BEGIN');\n" +
                 "\tperform dblink_exec('connection',E'INSERT INTO public.%s(database_url,database_port,database_name,table_name,schema,value,operation)" +
                 "VALUES(\\'%s\\', \\'%s\\', \\'%s\\', \\'%s\\', \\'%s\\', %s, \\'%d\\');');\n" +
@@ -256,7 +256,8 @@ public class sqlUtils {
             count++;
         }
         ;
-        return String.format(triggerTemplate, operation, table, port, cdcDB, username, password, cdcTable, host, port, database, table, gson.toJson(fields), valueDetail, operationType);
+        return String.format(triggerTemplate, operation, table, host, port, cdcDB, username, password, cdcTable, host,
+                port, database, table, gson.toJson(fields), valueDetail, operationType);
     }
 
     public static OffsetModel getOffsets(Connection connection, String host, String port) {

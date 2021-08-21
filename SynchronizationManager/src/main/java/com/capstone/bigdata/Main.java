@@ -95,13 +95,14 @@ public class Main {
                 "INNER JOIN  webservice_test.request req\n" +
                 "on mr.request_type_id = req.id\n" +
                 "where request_type_id = ? ");
+        System.out.println("request_type_id is: " + request_id);
         prpStmt.setInt(1, request_id);
         ResultSet rs = prpStmt.executeQuery();
         while (rs.next()) {
             MergeRequestModel mrm = new MergeRequestModel();
             mrm.setHost(host);
             mrm.setPort(port);
-            mrm.setDatabase(port);
+            mrm.setDatabase(dbName);
             mrm.setTable(tableName);
             mrm.setDatabaseType(database_type);
             mrm.setMergeTable(rs.getString("merge_table_name"));

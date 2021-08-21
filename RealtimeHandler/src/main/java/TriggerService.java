@@ -1,4 +1,7 @@
+import com.fasterxml.jackson.databind.ObjectMapper;
 import models.LogModel;
+import models.MappingModel;
+import models.MergeRequest;
 import models.TableMonitor;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -6,12 +9,10 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.spark.SparkException;
 import org.apache.spark.api.java.function.VoidFunction2;
-import org.apache.spark.sql.Dataset;
-import org.apache.spark.sql.Row;
-import org.apache.spark.sql.SaveMode;
-import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.*;
 import org.apache.spark.sql.expressions.Window;
 import org.apache.spark.sql.expressions.WindowSpec;
+import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
@@ -26,6 +27,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -58,8 +60,8 @@ public class TriggerService implements Serializable {
                         .option("subscribe", topic)
                         .load();
 
-        StructType message_schema = DataTypes.createStructType(new StructField[]{
-                DataTypes.createStructField("server_host", DataTypes.StringType, false),
+        StructType merge_schema = DataTypes.createStructType(new StructField[]{
+                DataTypes.createStructField("host", DataTypes.StringType, false),
                 DataTypes.createStructField("port", DataTypes.StringType, true),
                 DataTypes.createStructField("table", DataTypes.StringType, true),
                 DataTypes.createStructField("databaseType", DataTypes.StringType, true),
@@ -68,8 +70,8 @@ public class TriggerService implements Serializable {
                 DataTypes.createStructField("mergeTable", DataTypes.StringType, true),
         });
 
-        StructType merge_schema = DataTypes.createStructType(new StructField[]{
-                DataTypes.createStructField("host", DataTypes.StringType, false),
+        StructType message_schema = DataTypes.createStructType(new StructField[]{
+                DataTypes.createStructField("server_host", DataTypes.StringType, false),
                 DataTypes.createStructField("port", DataTypes.StringType, true),
                 DataTypes.createStructField("table", DataTypes.StringType, true),
                 DataTypes.createStructField("database_type", DataTypes.StringType, true),
@@ -130,6 +132,8 @@ public class TriggerService implements Serializable {
                                             DataTypes.createStructField("value", DataTypes.StringType, true),
                                     });
                                     //
+                                    Dataset<Row> cdcMergeDS = null;
+                                    //
                                     String databaseType = row.getAs("database_type");
                                     String host = row.getAs("server_host");
                                     String port = row.getAs("port");
@@ -138,6 +142,11 @@ public class TriggerService implements Serializable {
                                     String username = row.getAs("username");
                                     String path = "";
                                     String schema = "";
+                                    String identity_key = row.getAs("identity_key");
+                                    if (identity_key == null || identity_key.equals("")) {
+                                        identity_key = getDefaultKeys(connection, host, port, database, table);
+                                    }
+                                    System.out.println("identity_key: " + identity_key);
                                     if (!databaseType.equals("oracle")) {
                                         path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, database, table);
                                     } else {
@@ -214,7 +223,8 @@ public class TriggerService implements Serializable {
                                             HashMap<String, String> fieldTypeMap = new HashMap<>();
                                             while (matcher.find()) {
                                                 String[] detail = matcher.group(1).split(":");
-                                                if (detail[1].equals("text") || detail[1].contains("VARCHAR") || detail[1].contains("varchar") || detail[1].equals("NUMBER")) {
+                                                if (detail[1].equalsIgnoreCase("text") || detail[1].equalsIgnoreCase("VARCHAR") ||
+                                                        detail[1].contains("varchar") || detail[1].equals("NUMBER") || detail[1].equalsIgnoreCase("character")) {
                                                     detail[1] = "string";
                                                 }
                                                 if (!detail[1].contains("(")) {
@@ -232,6 +242,7 @@ public class TriggerService implements Serializable {
                                             listCDCCols.add("OPERATION");
                                             listCastCols.add("OPERATION");
                                             // converting type
+                                            // compress the data
                                             transformDF = dataset1
                                                     .withColumnRenamed("id", "ssk_id")
                                                     .withColumn("data", from_json(col("value").cast("string"), dataSchema))
@@ -259,7 +270,12 @@ public class TriggerService implements Serializable {
                                             sendLogs(4, "fail", messageError, log, row, connection);
                                             throw new Exception(messageError);
                                         }
-                                        WindowSpec windows = Window.partitionBy(row.getAs("identity_key"), "operation");
+                                        WindowSpec windows = null;
+                                        try {
+                                            windows = Window.partitionBy(identity_key, "operation");
+                                        } catch (Exception exception) {
+                                            exception.printStackTrace();
+                                        }
                                         // remove duplication operation - only get the last one
                                         try {
                                             sendLogs(5, "processing", "remove duplication operations", log, row, connection);
@@ -274,6 +290,10 @@ public class TriggerService implements Serializable {
                                                     .withColumn("modified", lit(currentTime));
                                             transformDF.show(false);
                                             transformDF.printSchema();
+                                            // add for merging later
+                                            cdcMergeDS = transformDF;
+                                            cdcMergeDS.count();
+                                            //
                                             sendLogs(5, "success", "done removing duplication operations", log, row, connection);
                                         } catch (Exception exception) {
                                             exception.printStackTrace();
@@ -299,95 +319,135 @@ public class TriggerService implements Serializable {
                                             // merging
                                             try {
                                                 sendLogs(7, "processing", "merging", log, row, connection);
-                                                WindowSpec w1 = Window.partitionBy(row.<String>getAs("identity_key"));
+                                                WindowSpec w1 = Window.partitionBy(col(identity_key));
                                                 transformDF.show(false);
                                                 // union old and new data
-                                                String[] source_data_cols = source_data.columns();
-                                                for (int index = 0; index < source_data_cols.length; index++) {
-                                                    source_data_cols[index] = source_data_cols[index].toUpperCase();
-                                                }
-                                                ArrayList<String> listColsSource = (ArrayList<String>) Arrays.asList(source_data_cols);
-                                                Collections.sort(listCDCCols);
-                                                Collections.sort(listColsSource);
-                                                ArrayList<String> mergeCols = new ArrayList<>();
-                                                // merge two rows
-                                                System.out.println("cdc size: " + listCDCCols.size());
-                                                System.out.println("source size: " + listColsSource.size());
-                                                int indexCDC = 0;
-                                                int indexSource = 0;
-                                                while (indexCDC < listCDCCols.size() || indexSource < listColsSource.size()) {
-                                                    if (indexCDC == listCDCCols.size() - 1) {
+                                                try {
+                                                    String[] source_data_cols = source_data.columns();
+                                                    for (int index = 0; index < source_data_cols.length; index++) {
+                                                        source_data_cols[index] = source_data_cols[index].toUpperCase();
+                                                    }
+                                                    ArrayList<String> listColsSource = new ArrayList<>(Arrays.asList(source_data_cols));
+                                                    Collections.sort(listCDCCols);
+                                                    Collections.sort(listColsSource);
+                                                    //
+                                                    System.out.println("cdc size: " + listCDCCols.size());
+                                                    System.out.println("source size: " + listColsSource.size());
+                                                    //
+                                                    ArrayList<String> mergeCols = new ArrayList<>();
+                                                    // merge two rows
+                                                    int indexCDC = 0;
+                                                    int indexSource = 0;
+                                                    while (indexCDC < listCDCCols.size() || indexSource < listColsSource.size()) {
                                                         //
-                                                        while (indexSource < listColsSource.size()) {
+                                                        int compareVal = listColsSource.get(indexSource).compareTo(listCDCCols.get(indexCDC));
+                                                        //
+                                                        if (compareVal == 0) {
+                                                            mergeCols.add(listColsSource.get(indexSource));
+                                                            indexCDC++;
+                                                            indexSource++;
+                                                        } else if (compareVal < 0) {
                                                             mergeCols.add(listColsSource.get(indexSource));
                                                             indexSource++;
-                                                        }
-                                                        break;
-                                                    }
-                                                    //
-                                                    if (indexSource == listColsSource.size() - 1) {
-                                                        //
-                                                        while (indexCDC < listCDCCols.size()) {
+                                                        } else {
                                                             mergeCols.add(listCDCCols.get(indexCDC));
                                                             indexCDC++;
                                                         }
-                                                        break;
-                                                    }
-                                                    //
-                                                    int compareVal = listColsSource.get(indexSource).compareTo(listCDCCols.get(indexCDC));
-                                                    //
-                                                    if (compareVal == 0) {
-                                                        mergeCols.add(listColsSource.get(indexSource));
-                                                        indexCDC++;
-                                                        indexSource++;
-                                                    } else if (compareVal == -1) {
-                                                        mergeCols.add(listColsSource.get(indexSource));
-                                                        indexSource++;
-                                                    } else {
-                                                        mergeCols.add(listCDCCols.get(indexSource));
-                                                        indexCDC++;
-                                                    }
+                                                        //
+                                                        if (indexCDC == listCDCCols.size() - 1) {
+                                                            //
+                                                            while (indexSource < listColsSource.size()) {
+                                                                mergeCols.add(listColsSource.get(indexSource));
+                                                                indexSource++;
+                                                            }
+                                                            break;
+                                                        }
+                                                        //
+                                                        if (indexSource == listColsSource.size() - 1) {
+                                                            //
+                                                            while (indexCDC < listCDCCols.size()) {
+                                                                mergeCols.add(listCDCCols.get(indexCDC));
+                                                                indexCDC++;
+                                                            }
+                                                            break;
+                                                        }
 
-                                                }
-                                                // debugging
-                                                System.out.println("cdc");
-                                                for (String col : listCDCCols) {
-                                                    System.out.println(col);
-                                                }
-                                                System.out.println("source");
-                                                for (String col : listColsSource) {
-                                                    System.out.println(col);
-                                                }
-                                                System.out.println("merge");
-                                                for (String col : mergeCols) {
-                                                    System.out.println(col);
-                                                }
-                                                // generate new col
-                                                ArrayList<String> newSourceCols = new ArrayList<>();
-                                                ArrayList<String> newCDCCols = new ArrayList<>();
-                                                for (String col : mergeCols) {
-                                                    if (listCDCCols.contains(col)) {
-                                                        // if contain then remain
-                                                        newCDCCols.add(col);
-                                                    } else {
-                                                        // else generate as null
-                                                        newCDCCols.add(String.format("null as %s", col));
+                                                    }
+                                                    // debugging
+                                                    System.out.println("cdc");
+                                                    for (String col : listCDCCols) {
+                                                        System.out.println(col);
+                                                    }
+                                                    System.out.println("source");
+                                                    for (String col : listColsSource) {
+                                                        System.out.println(col);
+                                                    }
+                                                    System.out.println("merge");
+                                                    for (String col : mergeCols) {
+                                                        System.out.println(col);
+                                                    }
+                                                    // generate new col
+                                                    ArrayList<String> newSourceCols = new ArrayList<>();
+                                                    ArrayList<String> newCDCCols = new ArrayList<>();
+                                                    schema = schema.toUpperCase();
+                                                    for (String col : mergeCols) {
+
+                                                        int startIndex = schema.indexOf("\"" + col + ":") + col.length() + 2;
+                                                        int endIndex = schema.indexOf(",", startIndex);
+                                                        String type = schema.substring(startIndex, endIndex);
+                                                        col = col.toUpperCase();
+                                                        System.out.println(type);
+                                                        if (listCDCCols.contains(col)) {
+                                                            // if contain then remain
+                                                            newCDCCols.add(col);
+                                                        } else {
+                                                            // else generate as null
+                                                            newCDCCols.add(String.format("cast (null as %s) as %s", type, col));
+                                                        }
+                                                        //
+                                                        if (!col.equalsIgnoreCase("OPERATION") && !col.equalsIgnoreCase("MODIFIED")) {
+                                                            if (listColsSource.contains(col)) {
+                                                                // if contain then remain
+                                                                newSourceCols.add(col);
+                                                            } else {
+                                                                // else generate as null
+                                                                newSourceCols.add(String.format("cast (null as %s) as %s", type, col));
+                                                            }
+                                                        }
+                                                    }
+                                                    // add new columns
+                                                    System.out.println("before");
+                                                    transformDF.show();
+                                                    source_data = source_data.selectExpr(JavaConverters.asScalaIteratorConverter(newSourceCols.iterator()).asScala().toSeq());
+                                                    source_data.printSchema();
+                                                    source_data.write().mode("overwrite").parquet("/user/temp" + path);
+                                                    sparkSession
+                                                            .read().parquet("/user/temp" + path)
+                                                            .write()
+                                                            .mode("overwrite")
+                                                            .parquet(path);
+                                                    //
+                                                    System.out.println("col cdc");
+                                                    for (String col : newCDCCols) {
+                                                        System.out.println(col);
+                                                    }
+                                                    System.out.println("col source");
+                                                    for (String col : newSourceCols) {
+                                                        System.out.println(col);
                                                     }
                                                     //
-                                                    if (listColsSource.contains(col)) {
-                                                        // if contain then remain
-                                                        newSourceCols.add(col);
-                                                    } else {
-                                                        // else generate as null
-                                                        newSourceCols.add(String.format("null as %s", col));
-                                                    }
+                                                    transformDF = transformDF.selectExpr(JavaConverters.asScalaIteratorConverter(newCDCCols.iterator()).asScala().toSeq());
+
+                                                    transformDF.printSchema();
+                                                    source_data.printSchema();
+                                                } catch (Exception exception) {
+                                                    exception.printStackTrace();
                                                 }
                                                 //
-                                                source_data = source_data.selectExpr(JavaConverters.asScalaIteratorConverter(newSourceCols.iterator()).asScala().toSeq());
-                                                transformDF = transformDF.selectExpr(JavaConverters.asScalaIteratorConverter(newCDCCols.iterator()).asScala().toSeq());
-                                                //
+                                                source_data = sparkSession.read().parquet(path);
                                                 source_data = source_data.withColumn("is_new", lit(0))
-                                                        .unionByName(transformDF.drop("operation").withColumn("is_new", lit(1)))
+                                                        .unionByName(transformDF.drop("operation")
+                                                                .withColumn("is_new", lit(1)))
                                                         .withColumn("latest_id", max("is_new").over(w1));
                                                 System.out.println("after union");
                                                 source_data.filter("id = 1").show();
@@ -403,34 +463,32 @@ public class TriggerService implements Serializable {
                                                 throw new Exception(messageError);
                                             }
                                             // write data to temp location
-                                            Dataset<Row> tmp = null;
-                                            try {
-                                                sendLogs(8, "processing", "write data to temp location", log, row, connection);
-                                                source_data.write()
-                                                        .mode("overwrite")
-                                                        .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
-                                                tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
-                                                sendLogs(8, "success", "done writing data to temp location", log, row, connection);
-                                            } catch (Exception exception) {
-                                                exception.printStackTrace();
-                                                String messageError = "Write to temp location failed !";
-                                                sendLogs(8, "fail", messageError, log, row, connection);
-                                                throw new Exception(messageError);
-                                            }
-                                            // move from location to main location
-                                            try {
-                                                tmp.write().mode("overwrite").parquet(path);
-                                                sendLogs(9, "processing", "move from location to main location", log, row, connection);
-//                                                tmp.write()
+//                                            Dataset<Row> tmp = null;
+//                                            try {
+//                                                sendLogs(8, "processing", "write data to temp location", log, row, connection);
+//                                                source_data.write()
 //                                                        .mode("overwrite")
-//                                                        .parquet(String.format("/user/test/%s/%s", row.getAs("database"), row.getAs("table")));
-                                                sendLogs(9, "success", "done moving from location to main location", log, row, connection);
-                                            } catch (Exception exception) {
-                                                exception.printStackTrace();
-                                                String messageError = "Fail moving from location to main location";
-                                                sendLogs(9, "success", messageError, log, row, connection);
-                                                throw new Exception(messageError);
-                                            }
+//                                                        .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+//                                                tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+//                                                sendLogs(8, "success", "done writing data to temp location", log, row, connection);
+//                                            } catch (Exception exception) {
+//                                                exception.printStackTrace();
+//                                                String messageError = "Write to temp location failed !";
+//                                                sendLogs(8, "fail", messageError, log, row, connection);
+//                                                throw new Exception(messageError);
+//                                            }
+//                                            // move from location to main location
+//                                            try {
+//                                                sendLogs(9, "processing", "move from location to main location", log, row, connection);
+//                                                tmp.write().mode("overwrite").parquet(path);
+//                                                sendLogs(9, "success", "done moving from location to main location", log, row, connection);
+//                                            } catch (Exception exception) {
+//                                                exception.printStackTrace();
+//                                                String messageError = "Fail moving from location to main location";
+//                                                sendLogs(9, "success", messageError, log, row, connection);
+//                                                throw new Exception(messageError);
+//                                            }
+                                            System.out.println("done");
                                         } else {
                                             //
                                             ArrayList<String> listPartitions = new ArrayList<>(Arrays.asList(partitionBy.split(",")));
@@ -505,7 +563,7 @@ public class TriggerService implements Serializable {
                                                 schema = schema.toUpperCase();
                                                 for (String col : mergeCols) {
 
-                                                    int startIndex = schema.indexOf(col) + col.length() + 1;
+                                                    int startIndex = schema.indexOf("\"" + col + ":") + col.length() + 2;
                                                     int endIndex = schema.indexOf(",", startIndex);
                                                     String type = schema.substring(startIndex, endIndex);
                                                     col = col.toUpperCase();
@@ -661,13 +719,108 @@ public class TriggerService implements Serializable {
                                             throw new Exception(messageError);
                                         }
                                         System.out.println("doneee");
+                                        /*
+                                         * get all merge request that having columns
+                                         * convert columns
+                                         * handle columns
+                                         * write output
+                                         * */
+                                        System.out.println("starting to merge in merge table");
+                                        String databaseAlias = getAlias(host, port, connection);
+                                        String query = String.format("SELECT latest_metadata, merge_table_name from webservice_test.merge_requests " +
+                                                "WHERE latest_metadata like ? and " +
+                                                "latest_metadata like ? ");
+                                        System.out.println(query);
+                                        PreparedStatement prpStmt = connection
+                                                .prepareStatement(query);
+                                        prpStmt.setString(1, "%\"table\": \"" + table + "\"%");
+                                        prpStmt.setString(2, "%\"database_alias\": \"" + databaseAlias + "\"%");
+                                        ResultSet rs = prpStmt.executeQuery();
+                                        while (rs.next()) {
+                                            MergeRequest metadata = new ObjectMapper().readValue(rs.getString("latest_metadata"), MergeRequest.class);
+                                            String mergeTable = rs.getString("merge_table_name");
+                                            String mergePath = String.format("/user/merge_request/%s", mergeTable);
+                                            //
+                                            Dataset<Row> mergeSource = sparkSession.read().parquet(mergePath);
+                                            ArrayList<String> mergeColumns = new ArrayList<String>(Arrays.asList(mergeSource.columns()));
+                                            Dataset<Row> cdcDS = cdcMergeDS.drop("modified");
+                                            // for making an action
+                                            cdcDS.count();
+                                            cdcDS = transformColumn(cdcDS, metadata, table, databaseAlias);
+                                            ArrayList<String> cdcColumns = new ArrayList<String>(Arrays.asList(cdcDS.columns()));
+                                            //
+                                            //
+                                            ArrayList<Column> partition = new ArrayList<>();
+
+                                            for (MappingModel mm : metadata.getList_mapping()) {
+                                                boolean isMergeExist = mergeColumns.contains(mm.getColName());
+                                                boolean isColExist = cdcColumns.contains(mm.getColName());
+                                                if (mm.getIs_unique() == 1 && isColExist && isMergeExist) {
+                                                    partition.add(col(mm.getColName()));
+                                                }
+                                            }
+                                            //
+                                            ArrayList<StructField> listFields = new ArrayList<>(Arrays.asList(mergeSource.schema().fields()));
+                                            HashMap<String, String> fieldHM = new HashMap<>();
+                                            //
+                                            for (int index = 0; index < listFields.size(); index++) {
+                                                fieldHM.put(listFields.get(index).name().toUpperCase(), listFields.get(index).dataType().typeName());
+                                                fieldHM.put(listFields.get(index).name().toLowerCase(), listFields.get(index).dataType().typeName());
+                                            }
+                                            //
+                                            ArrayList<StructField> listCDCFields = new ArrayList<>(Arrays.asList(cdcDS.schema().fields()));
+                                            HashMap<String, String> fieldCDCHM = new HashMap<>();
+                                            for (int index = 0; index < listCDCFields.size(); index++) {
+                                                fieldCDCHM.put(listCDCFields.get(index).name().toUpperCase(), listCDCFields.get(index).dataType().typeName());
+                                                fieldCDCHM.put(listCDCFields.get(index).name().toLowerCase(), listCDCFields.get(index).dataType().typeName());
+                                            }
+                                            //
+                                            mergeColumns.replaceAll(String::toUpperCase);
+                                            cdcColumns.replaceAll(String::toUpperCase);
+                                            System.out.println(mergeColumns);
+                                            System.out.println(cdcColumns);
+                                            for (String col : mergeColumns) {
+                                                System.out.println(col);
+                                                System.out.println("-------------");
+                                                if (!cdcColumns.contains(col)) {
+                                                    cdcDS = cdcDS.withColumn(col, expr(String.format("cast (null as %s) as %s"
+                                                            , fieldHM.get(col), col)));
+                                                } else {
+                                                    if (!fieldHM.get(col.toUpperCase()).equalsIgnoreCase(fieldCDCHM.get(col.toUpperCase()))) {
+                                                        // if different type then convert all to string
+                                                        cdcDS = cdcDS.withColumn(col, expr(String.format("cast (%s as string)", col)));
+                                                        mergeSource = mergeSource.withColumn(col, expr(String.format("cast (%s as string)", col)));
+                                                    }
+                                                }
+                                            }
+                                            //
+                                            String randomCol = "col_1231223";
+                                            WindowSpec windowSpec = Window.partitionBy(JavaConverters.asScalaIteratorConverter(partition.iterator()).asScala().toSeq());
+                                            mergeSource = mergeSource
+                                                    .withColumn(randomCol, lit(0))
+                                                    .withColumn("operation", lit(null))
+                                                    .unionByName(cdcDS.withColumn(randomCol, lit(1)))
+                                                    .withColumn("is_max_12133213", max(randomCol).over(windowSpec))
+                                                    .filter(expr(String.format("%s = is_max_12133213", randomCol)))
+                                                    .filter("operation <> 3 or operation is null")
+                                                    .drop(randomCol, "is_max_12133213");
+                                            //
+                                            mergeSource.write().mode("overwrite").parquet("/temp" + mergePath);
+                                            //
+                                            sparkSession.read().parquet("/temp" + mergePath).write().mode("overwrite").parquet(mergePath);
+                                            //
+                                            System.out.println("done merging");
+                                        }
+                                        //
                                     }
                                 } catch (Exception exception) {
                                     // retrying
+                                    exception.printStackTrace();
                                 }
                             }
                             // processing merge request when new table is assigned
                             try {
+                                requestedDataset.show();
                                 Dataset<Row> mergeDS = requestedDataset.filter("topic = 'merge-request'")
                                         .withColumn("extract", from_json(col("value").cast("string"), merge_schema))
                                         .select(col("extract.*"));
@@ -689,16 +842,79 @@ public class TriggerService implements Serializable {
                                     } else {
                                         path = String.format("/user/%s/%s/%s/%s/%s/", databaseType, host, port, username, table);
                                     }
-                                    if (checkPath(mergePath)) {
+                                    // get metadata
+                                    PreparedStatement prpStmt = connection.prepareStatement("SELECT * FROM webservice_test.merge_requests where merge_table_name = ?");
+                                    prpStmt.setString(1, mergeTable);
+                                    ResultSet rs = prpStmt.executeQuery();
+                                    MergeRequest new_metadata = null;
+                                    while (rs.next()) {
+                                        String latest_metadata = rs.getString("latest_metadata");
+                                        new_metadata = new ObjectMapper().readValue(latest_metadata, MergeRequest.class);
+                                        break;
+                                    }
+                                    Dataset<Row> ds = sparkSession.read().parquet(path);
+                                    ds = transformColumn(ds, new_metadata, table, getAlias(host, port, connection));
+                                    //
+                                    ArrayList<String> newColsName = new ArrayList<>(Arrays.asList(ds.columns()));
+                                    ArrayList<String> commonCols = new ArrayList<>();
+                                    //
+
+                                    //
+                                    if (!checkPath(mergePath)) {
                                         // if there is exist merge request
+                                        ds.write().mode("overwrite").parquet(mergePath);
+                                        System.out.println("done new");
                                     } else {
                                         // otherwise
-                                    }
+                                        //
+                                        Dataset<Row> mergeData = sparkSession.read().parquet(mergePath).alias("ms");
+                                        ArrayList<String> mergeCols = new ArrayList<>(Arrays.asList(mergeData.columns()));
+                                        String joinCondition = "";
+                                        //
+                                        System.out.println(newColsName);
+                                        System.out.println(mergeCols);
+                                        for (MappingModel mm : new_metadata.getList_mapping()) {
+                                            boolean isMergeExist = mergeCols.contains(mm.getColName());
+                                            boolean isColExist = newColsName.contains(mm.getColName());
+                                            if (mm.getIs_unique() == 1 && isColExist && isMergeExist) {
+                                                joinCondition += String.format("ms.%s = nc.%s_temp_12345654321 and ", mm.getColName(), mm.getColName());
+                                            }
+                                            if (isColExist) {
+                                                ds = ds.withColumnRenamed(mm.getColName(), mm.getColName() + "_temp_12345654321");
+                                                commonCols.add(mm.getColName());
+                                            }
+                                        }
+                                        // remove the last 'and'
+                                        joinCondition = joinCondition.substring(0, joinCondition.length() - 4);
+                                        System.out.println(String.format("join conditions: %s", joinCondition));
 
+                                        ds = ds.alias("nc");
+                                        mergeData = mergeData.join(ds, expr(joinCondition), "full")
+                                                .select(col("ms.*"), col("nc.*"));
+                                        System.out.println("join");
+                                        for (String cm : commonCols) {
+                                            boolean isMergeExist = mergeCols.contains(cm);
+                                            boolean isColExist = newColsName.contains(cm);
+                                            if (isColExist && isMergeExist) {
+                                                mergeData = mergeData
+                                                        .withColumn(cm + "_temp_12345654321", expr(String.format("cast (%s as string)", cm + "_temp_12345654321")))
+                                                        .withColumn(cm, expr(String.format("cast (%s as string)", cm)))
+                                                        .withColumn(cm, coalesce(col(cm + "_temp_12345654321"), col(cm)))
+                                                        .drop(cm + "_temp_12345654321");
+                                            } else {
+                                                mergeData = mergeData
+                                                        .withColumn(cm, col(cm + "_temp_12345654321"))
+                                                        .drop(cm + "_temp_12345654321");
+                                            }
+                                        }
+                                        mergeData.write().mode("overwrite").parquet("/temp" + mergePath);
+                                        sparkSession.read().parquet("/temp" + mergePath).write().mode("overwrite").parquet(mergePath);
+                                        System.out.println("done");
+                                    }
                                 }
 
                             } catch (Exception exception) {
-
+                                exception.printStackTrace();
                             }
                             //
                         } catch (Exception exception) {
@@ -711,6 +927,91 @@ public class TriggerService implements Serializable {
                 })
                 .start()
                 .awaitTermination();
+    }
+
+    private static Dataset<Row> transformColumn(Dataset<Row> inputDS, MergeRequest mr, String table, String alias) {
+        String fullTable = alias + "." + table;
+        System.out.println(String.format("Alias : %s - Table: %s", alias, fullTable));
+        ArrayList<String> listCol = new ArrayList<>(Arrays.asList(inputDS.columns()));
+        listCol.replaceAll(String::toLowerCase);
+        //
+        listCol.remove("operation");
+        //
+        HashMap<String, String> mappingCol = new HashMap<>();
+        //
+        for (MappingModel mp : mr.getList_mapping()) {
+            System.out.println("common: " + mp.getColName());
+            System.out.println("fulltable: " + fullTable);
+            for (String col : mp.getListCol()) {
+                System.out.println("col: " + col);
+                int index = col.indexOf(fullTable);
+                System.out.println("index: " + index);
+                // handle if that column is deleted
+                if (index >= 0) {
+                    String currentCol = col.substring(index + fullTable.length() + 1);
+                    // handle if that column is deleted
+                    if (listCol.contains(currentCol)) {
+                        System.out.println(String.format("%s : %s", fullTable, currentCol));
+                        try {
+//                        inputDS = inputDS.withColumnRenamed(currentCol, mp.getColName());
+                            mappingCol.put(currentCol, mp.getColName());
+                            listCol.remove(currentCol);
+                            System.out.println(listCol);
+                        } catch (Exception exception) {
+                            exception.printStackTrace();
+                        }
+                    }
+                }
+            }
+            System.out.println("--------------------");
+        }
+        //
+        table = table.replaceAll("[.]", "_");
+        for (String remainCol : listCol) {
+            inputDS = inputDS.withColumnRenamed(remainCol, String.format("%s_%s_%s", remainCol, table, alias));
+        }
+
+        for (String key : mappingCol.keySet()) {
+            inputDS = inputDS.withColumnRenamed(key, mappingCol.get(key));
+        }
+        //
+        return inputDS;
+    }
+
+    private static String getAlias(String host, String port, Connection connection) throws SQLException {
+        String query = "" +
+                "SELECT distinct alias FROM webservice_test.database_infos di\n" +
+                "INNER JOIN\n" +
+                "webservice_test.server_infos si\n" +
+                "on di.server_info_id = si.id where `server_host` = ? and port = ?";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, host);
+        prpStmt.setString(2, port);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            return rs.getString("alias");
+        }
+        return null;
+    }
+
+    private static String getDefaultKeys(Connection connection, String host, String port, String database, String table) throws SQLException {
+        String query = "" +
+                "select default_key from \n" +
+                "webservice_test.`tables` tbl\n" +
+                "inner join webservice_test.database_infos di\n" +
+                "inner join webservice_test.server_infos si\n" +
+                "on tbl.database_info_id = di.id and di.server_info_id = si.id\n" +
+                "where `table_name` = ? and database_name = ? and server_host = ? and port = ?;";
+        PreparedStatement prpStmt = connection.prepareStatement(query);
+        prpStmt.setString(1, table);
+        prpStmt.setString(2, database);
+        prpStmt.setString(3, host);
+        prpStmt.setString(4, port);
+        ResultSet rs = prpStmt.executeQuery();
+        while (rs.next()) {
+            return rs.getString("default_key");
+        }
+        return null;
     }
 
     private static Boolean checkPath(String uri) {
@@ -730,6 +1031,7 @@ public class TriggerService implements Serializable {
             return false;
         }
     }
+
 
     public static void sendLogs(int step, String status, String message, LogModel log, Row row, Connection connection) throws SQLException {
         log.setStep(step);

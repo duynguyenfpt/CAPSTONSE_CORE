@@ -85,6 +85,7 @@ public class CheckMergeRequest {
         }, 0, 20, TimeUnit.SECONDS);
     }
 
+
     private static void createSyncRequest(Connection connection, int tableID, int requestID) throws SQLException {
         // insert sync_table_request table first
         String insertSTR = "Insert into webservice_test.sync_table_requests(is_all,table_id,request_id) " +

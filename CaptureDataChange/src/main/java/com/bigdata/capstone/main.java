@@ -143,6 +143,7 @@ public class main {
             }
 //            // 5. logging
 //            sqlUtils.insertJobLog(jobID, 1, "ingest_cdc", 1);
+            System.out.println("---------------------------------");
         } catch (Exception sqlException) {
             sqlException.printStackTrace();
         } finally {
@@ -150,7 +151,7 @@ public class main {
                 configConnection.close();
             }
             if (!Objects.isNull(connection)) {
-                configConnection.close();
+                connection.close();
             }
         }
     }
@@ -197,6 +198,7 @@ public class main {
                 "  EXECUTE PROCEDURE \"capture_%s_%s\"()";
         //
 //        System.out.println("Finish creating updates trigger !!");
+        System.out.println(updateTriggerFunction);
         connection.createStatement().execute(updateTriggerFunction);
         connection.createStatement().execute(insertTriggerFunction);
         connection.createStatement().execute(deleteTriggerFunction);
@@ -293,11 +295,11 @@ public class main {
                 "CREATE TABLE IF NOT EXISTS public.cdc_detail (\n" +
                 "  id SERIAL,\n" +
                 "  database_url varchar(45) DEFAULT NULL,\n" +
-                "  database_port varchar(6) DEFAULT NULL,\n" +
-                "  database_name varchar(20) DEFAULT NULL,\n" +
-                "  table_name varchar(20) DEFAULT NULL,\n" +
-                "  schema varchar(200) DEFAULT NULL,\n" +
-                "  value varchar(200) DEFAULT NULL,\n" +
+                "  database_port varchar(20) DEFAULT NULL,\n" +
+                "  database_name varchar(100) DEFAULT NULL,\n" +
+                "  table_name varchar(100) DEFAULT NULL,\n" +
+                "  schema varchar(800) DEFAULT NULL,\n" +
+                "  value varchar(800) DEFAULT NULL,\n" +
                 "  operation int DEFAULT NULL,\n" +
                 "  created TIMESTAMP DEFAULT CURRENT_TIMESTAMP \n" +
                 ");";
