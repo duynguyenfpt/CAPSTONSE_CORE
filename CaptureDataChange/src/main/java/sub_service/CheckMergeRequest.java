@@ -3,6 +3,7 @@ package sub_service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import models.MergeRequest;
+import models.MergeRequestModel;
 import models.TableModel;
 import org.apache.hadoop.fs.FileStatus;
 
@@ -38,12 +39,13 @@ public class CheckMergeRequest {
                     // get valid job and request
                     // ready tables
                     Statement stmt = connection.createStatement();
-                    ResultSet rs = stmt.executeQuery("SELECT latest_metadata, current_metadata,request_type_id" +
+                    ResultSet rs = stmt.executeQuery("SELECT latest_metadata, current_metadata,request_type_id,merge_table_name " +
                             " FROM webservice_test.merge_requests" +
                             " WHERE latest_metadata <> current_metadata or current_metadata is null");
                     while (rs.next()) {
                         String latest_metadata = rs.getString("latest_metadata");
                         String current_metadata = rs.getString("current_metadata");
+                        String mergeTable = rs.getString("merge_table_name");
                         int requestMergeID = rs.getInt("request_type_id");
                         MergeRequest new_metadata = new ObjectMapper().readValue(latest_metadata, MergeRequest.class);
                         MergeRequest old_metadata = null;
@@ -65,6 +67,10 @@ public class CheckMergeRequest {
                         } else {
                             for (TableModel tm : new_metadata.getList_tables()) {
                                 listTablesChange.add(tm.getTable_id());
+                                String pathToHDFSFolder = getPath(connection, tm.getTable_id());
+                                if (checkPath(pathToHDFSFolder)) {
+                                    sendMergeModel(connection, tm.getTable_id(), mergeTable);
+                                }
                             }
                         }
                         for (int index = 0; index < listTablesChange.size(); index++) {
@@ -73,10 +79,11 @@ public class CheckMergeRequest {
                             if (!checkPath(pathToHDFSFolder)) {
                                 // build a request sync
                                 System.out.println(listTablesChange.get(index));
-                                createSyncRequest(connection, listTablesChange.get(index), requestMergeID);
+//                                createSyncRequest(connection, listTablesChange.get(index), requestMergeID);
                             }
                         }
-                        createJobs(connection, requestMergeID);
+//                        createJobs(connection, requestMergeID);
+//                        updateRequestStatus(connection, requestMergeID);
                     }
                 } catch (Exception exception) {
                     exception.printStackTrace();
@@ -97,6 +104,38 @@ public class CheckMergeRequest {
         System.out.println("insert sync_table_request successfully");
     }
 
+    private static void sendMergeModel(Connection connection, int tableID, String mergeTable) throws SQLException {
+        // insert sync_table_request table first
+        String insertSTR = "select server_host,port,username,database_type,database_name,table_name From webservice_test.`tables` tbls\n" +
+                "inner join webservice_test.server_infos si \n" +
+                "inner join webservice_test.database_infos di \n" +
+                "on tbls.database_info_id = di.id and di.server_info_id = si.id and tbls.id = ?;";
+        PreparedStatement prpStmt = connection.prepareStatement(insertSTR);
+        prpStmt.setInt(1, tableID);
+        ResultSet rs = prpStmt.executeQuery();
+        MergeRequestModel mrm = new MergeRequestModel();
+        while (rs.next()) {
+            mrm.setHost(rs.getString("server_host"));
+            mrm.setPort(rs.getString("port"));
+            mrm.setDatabase(rs.getString("database_name"));
+            mrm.setTable(rs.getString("table_name"));
+            mrm.setDatabaseType(rs.getString("database_type"));
+            mrm.setMergeTable(mergeTable);
+            mrm.setUsername(rs.getString("username"));
+            utils.db_utils.sqlUtils.mergeRequestProducer("localhost:9092", "merge-request", mrm);
+            break;
+        }
+    }
+
+    private static void updateRequestStatus(Connection connection, int requestID) throws SQLException {
+        // insert sync_table_request table first
+        String insertSTR = "update webservice_test.request set status = 1 where id = ? ";
+        PreparedStatement prpStmt = connection.prepareStatement(insertSTR);
+        prpStmt.setInt(1, requestID);
+        prpStmt.executeUpdate();
+        System.out.println("update request status successfully");
+    }
+
     private static void createJobs(Connection connection, int requestID) throws SQLException {
         // insert jobs table
         String insertJobs = "Insert into webservice_test.jobs(is_active,max_retries,executed_by,created_by,request_id,status,number_retries,deleted) " +
@@ -113,6 +152,12 @@ public class CheckMergeRequest {
         conf.addResource(new Path("/etc/hadoop/conf/core-site.xml"));
         conf.set("hadoop.security.authentication", "kerberos");
         conf.set("fs.defaultFS", "hdfs://127.0.0.1:9000");
+        conf.set("fs.hdfs.impl",
+                org.apache.hadoop.hdfs.DistributedFileSystem.class.getName()
+        );
+        conf.set("fs.file.impl",
+                org.apache.hadoop.fs.LocalFileSystem.class.getName()
+        );
         try {
             FileSystem fs = FileSystem.get(URI.create(uri), conf);
             FileStatus[] fileStatuses = fs.globStatus(new Path(uri));

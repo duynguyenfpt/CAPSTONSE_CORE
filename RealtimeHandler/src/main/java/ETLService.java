@@ -1,3 +1,4 @@
+import org.apache.hadoop.conf.Configuration;
 import org.apache.spark.api.java.function.VoidFunction2;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -8,8 +9,10 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.URI;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -58,19 +61,22 @@ public class ETLService implements Serializable {
         // get alias and path on hdfs
         ResultSet rs = getAlias(configConnection);
         HashMap<String, String> aliasHashMap = new HashMap<>();
+        HashMap<String, String> pathHashMap = new HashMap<>();
         while (rs.next()) {
             String path = String.format("/user/%s/%s/%s/%s/%s/", rs.getString("database_type"),
                     rs.getString("server_host"), rs.getString("port"),
                     rs.getString("database_name"), rs.getString("table_name"));
             // set up alias
             try {
-                String queryAlias = ":" + rs.getString("alias") + "." + rs.getString("table_name") + ":";
+                String queryAlias = ":" + rs.getString("alias").toLowerCase() + "." +
+                        rs.getString("table_name").toLowerCase() + ":";
                 String alias = "table" + rs.getInt("table_id");
                 // create temp view in spark
                 System.out.println(path);
-                sparkSession.read().parquet(path).createOrReplaceTempView(alias);
+
                 System.out.println(String.format("%s alias as: %s - path: %s", queryAlias, alias, path));
                 aliasHashMap.put(queryAlias, alias);
+                pathHashMap.put(alias, path);
             } catch (Exception exception) {
                 exception.printStackTrace();
             }
@@ -112,8 +118,9 @@ public class ETLService implements Serializable {
                                 try {
                                     String query = row.getAs("query");
                                     // query parser
-                                    query = queryTableConverter(query, aliasHashMap);
-                                    System.out.println(query);
+                                    System.out.println("QUERY: " + query);
+                                    query = queryTableConverter(query, aliasHashMap, pathHashMap, sparkSession);
+                                    System.out.println("QUERY: " + query);
                                     String path = String.format("/user/etl_query/id_%d_%d/", requestId, jobId);
                                     // execute query
                                     Dataset<Row> result = sparkSession.sql(query);
@@ -171,6 +178,7 @@ public class ETLService implements Serializable {
                                     prpStmt2.setInt(2, etlID);
                                     prpStmt2.executeUpdate();
                                     //
+                                    exception.printStackTrace();
                                 }
                             }
                         } catch (Exception exception) {
@@ -196,16 +204,50 @@ public class ETLService implements Serializable {
         return stmt.executeQuery(query);
     }
 
-    public static String queryTableConverter(String tableQuery, HashMap<String, String> aliasHM) throws SQLException {
+    public static String queryTableConverter(String tableQuery, HashMap<String, String> aliasHM, HashMap<String, String> pathHM, SparkSession sparkSession) throws SQLException {
         Pattern pattern = Pattern.compile(":[a-zA-Z1-9._]+:");
         Matcher matcher = pattern.matcher(tableQuery);
         while (matcher.find()) {
-            String queryAlias = matcher.group(0);
-            System.out.println(queryAlias);
-            tableQuery = tableQuery.replaceAll(queryAlias, aliasHM.get(queryAlias));
+            String queryAlias = matcher.group(0).toLowerCase();
+            if (!queryAlias.startsWith(":merge_request")) {
+                String alias = aliasHM.get(queryAlias);
+                System.out.println("alias:" + alias);
+                System.out.println("path:" + pathHM.get(alias));
+                tableQuery = tableQuery.replaceAll(queryAlias, alias);
+                sparkSession.read().parquet(pathHM.get(alias)).createOrReplaceTempView(alias);
+            } else {
+                int firstDot = queryAlias.indexOf(".");
+                System.out.println(queryAlias);
+                String mergeTable = queryAlias.substring(firstDot + 1, queryAlias.length() - 1);
+                String mergePath = String.format("/user/merge_request/%s", mergeTable);
+                System.out.println("merge table is :" + mergeTable);
+                System.out.println("merge path is :" + mergePath);
+                System.out.println("check path is : " + checkPath(mergePath));
+                if (checkPath(mergePath)) {
+                    sparkSession.read().parquet(mergePath).createOrReplaceTempView(mergeTable);
+                    tableQuery = tableQuery.replaceAll(queryAlias, mergeTable);
+                }
+
+            }
         }
         return tableQuery;
     }
 
-    ;
+    private static Boolean checkPath(String uri) {
+        Configuration conf = new Configuration();
+        conf.addResource(new Path("/etc/hadoop/conf/hdfs-site.xml"));
+        conf.addResource(new Path("/etc/hadoop/conf/core-site.xml"));
+        conf.set("hadoop.security.authentication", "kerberos");
+        conf.set("fs.defaultFS", "hdfs://127.0.0.1:9000");
+        try {
+            FileSystem fs = FileSystem.get(URI.create(uri), conf);
+            FileStatus[] fileStatuses = fs.globStatus(new Path(uri));
+            if (fileStatuses == null) return false;
+            // Check if folder exists at the given location
+            return fileStatuses.length > 0;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
 }

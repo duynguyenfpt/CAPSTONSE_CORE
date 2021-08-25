@@ -437,7 +437,6 @@ public class TriggerService implements Serializable {
                                                     }
                                                     //
                                                     transformDF = transformDF.selectExpr(JavaConverters.asScalaIteratorConverter(newCDCCols.iterator()).asScala().toSeq());
-
                                                     transformDF.printSchema();
                                                     source_data.printSchema();
                                                 } catch (Exception exception) {
@@ -445,9 +444,28 @@ public class TriggerService implements Serializable {
                                                 }
                                                 //
                                                 source_data = sparkSession.read().parquet(path);
-                                                source_data = source_data.withColumn("is_new", lit(0))
-                                                        .unionByName(transformDF.drop("operation")
-                                                                .withColumn("is_new", lit(1)))
+                                                source_data = source_data.withColumn("is_new", lit(0));
+                                                transformDF = transformDF.drop("operation")
+                                                        .withColumn("is_new", lit(1));
+                                                //
+                                                HashMap<String, String> sourceColsHM = new HashMap<>();
+                                                ArrayList<StructField> sourceListCols = new ArrayList<>(Arrays.asList(source_data.schema().fields()));
+                                                ArrayList<StructField> transListCols = new ArrayList<>(Arrays.asList(transformDF.schema().fields()));
+                                                //
+                                                for (StructField sf : sourceListCols) {
+                                                    sourceColsHM.put(sf.name(), sf.dataType().typeName());
+                                                }
+                                                for (StructField sf : transListCols) {
+                                                    if (!sf.dataType().typeName().equalsIgnoreCase(sourceColsHM.get(sf.name()))) {
+                                                        transformDF = transformDF
+                                                                .withColumn(sf.name(), expr(String.format("cast (%s as string) as %s", sf.name(), sf.name())));
+                                                        source_data = source_data
+                                                                .withColumn(sf.name(), expr(String.format("cast (%s as string) as %s", sf.name(), sf.name())));
+                                                    }
+                                                }
+                                                //
+                                                source_data = source_data
+                                                        .unionByName(transformDF)
                                                         .withColumn("latest_id", max("is_new").over(w1));
                                                 System.out.println("after union");
                                                 source_data.filter("id = 1").show();
@@ -463,31 +481,31 @@ public class TriggerService implements Serializable {
                                                 throw new Exception(messageError);
                                             }
                                             // write data to temp location
-//                                            Dataset<Row> tmp = null;
-//                                            try {
-//                                                sendLogs(8, "processing", "write data to temp location", log, row, connection);
-//                                                source_data.write()
-//                                                        .mode("overwrite")
-//                                                        .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
-//                                                tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
-//                                                sendLogs(8, "success", "done writing data to temp location", log, row, connection);
-//                                            } catch (Exception exception) {
-//                                                exception.printStackTrace();
-//                                                String messageError = "Write to temp location failed !";
-//                                                sendLogs(8, "fail", messageError, log, row, connection);
-//                                                throw new Exception(messageError);
-//                                            }
-//                                            // move from location to main location
-//                                            try {
-//                                                sendLogs(9, "processing", "move from location to main location", log, row, connection);
-//                                                tmp.write().mode("overwrite").parquet(path);
-//                                                sendLogs(9, "success", "done moving from location to main location", log, row, connection);
-//                                            } catch (Exception exception) {
-//                                                exception.printStackTrace();
-//                                                String messageError = "Fail moving from location to main location";
-//                                                sendLogs(9, "success", messageError, log, row, connection);
-//                                                throw new Exception(messageError);
-//                                            }
+                                            Dataset<Row> tmp = null;
+                                            try {
+                                                sendLogs(8, "processing", "write data to temp location", log, row, connection);
+                                                source_data.write()
+                                                        .mode("overwrite")
+                                                        .parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+                                                tmp = sparkSession.read().parquet(String.format("/user/tmp/%s/%s", row.getAs("database"), row.getAs("table")));
+                                                sendLogs(8, "success", "done writing data to temp location", log, row, connection);
+                                            } catch (Exception exception) {
+                                                exception.printStackTrace();
+                                                String messageError = "Write to temp location failed !";
+                                                sendLogs(8, "fail", messageError, log, row, connection);
+                                                throw new Exception(messageError);
+                                            }
+                                            // move from location to main location
+                                            try {
+                                                sendLogs(9, "processing", "move from location to main location", log, row, connection);
+                                                tmp.write().mode("overwrite").parquet(path);
+                                                sendLogs(9, "success", "done moving from location to main location", log, row, connection);
+                                            } catch (Exception exception) {
+                                                exception.printStackTrace();
+                                                String messageError = "Fail moving from location to main location";
+                                                sendLogs(9, "success", messageError, log, row, connection);
+                                                throw new Exception(messageError);
+                                            }
                                             System.out.println("done");
                                         } else {
                                             //

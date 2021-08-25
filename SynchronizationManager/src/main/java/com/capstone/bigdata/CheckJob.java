@@ -29,8 +29,8 @@ public class CheckJob {
             @Override
             public void run() {
                 try {
-                    String template = "java -cp jars/SynchronizationManager-1.0-jar-with-dependencies.jar:jars/mysql-connector-java-8.0.25.jar:jars/kafka-clients-2.4.1.jar " +
-                            "com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d %d %s %s %s %s %s %s";
+                    String template = "nohup java -cp jars/SynchronizationManager-1.0-jar-with-dependencies.jar:jars/mysql-connector-java-8.0.25.jar:jars/kafka-clients-2.4.1.jar " +
+                            "com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d %d %s %s %s %s %s %s &";
                     DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
                     Date date = new Date();
                     System.out.println("START CHECKING REQUEST: " + dateFormat.format(date));
@@ -107,7 +107,7 @@ public class CheckJob {
                         if (Objects.isNull(queryRequest) || queryRequest.equals("") || queryRequest.equals(" ")) {
                             queryRequest = "' '";
                         } else {
-                            queryRequest = String.format("'%s'", queryRequest);
+                            queryRequest = String.format("\"%s\"", queryRequest);
                         }
                         String requestID = rs.getString("req_id");
                         String cmd = String.format(template, host, port, username, password, table_name, database_name,

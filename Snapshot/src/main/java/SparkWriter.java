@@ -9,6 +9,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -27,6 +29,7 @@ public class SparkWriter {
         // Snapshot
         String jobID = "";
         LogModel log = null;
+        Instant startTime = Instant.now();
         //
         try {
             String database = args[0];
@@ -94,6 +97,8 @@ public class SparkWriter {
                         .parquet(path);
             }
             sendLogs(5, "success", "success snapshotting", log);
+            Instant endTime = Instant.now();
+            System.out.println("TIME FOR SYNCHRONIZATION:" + Duration.between(startTime, endTime).toMinutes());
         } catch (Exception exception) {
             exception.printStackTrace();
             sendLogs(5, "failed", "failed snapshotting", log);
