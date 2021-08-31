@@ -117,6 +117,7 @@ public class main {
                 }
                 sendLogs(2, "success", "done drop and create three type triggers - create table cdc and meta data", log);
             } catch (Exception exception) {
+                exception.printStackTrace();
                 sendLogs(2, "failed", "failed drop and create three type triggers - create table cdc and meta data", log);
                 throw new Exception("failed drop and create three type triggers - create table cdc and meta data");
             }
@@ -129,6 +130,7 @@ public class main {
                 sendLogs(3, "success", " done init offset for checking", log);
             } catch (Exception exception) {
                 sendLogs(3, "failed", " failed init offset for checking", log);
+                exception.printStackTrace();
                 throw new Exception("");
             }
             // 4. reset monitor
@@ -178,6 +180,18 @@ public class main {
 
     private static void initializePostgresql(Connection connection, String host, String port,
                                              String database, String table, String username, String password) throws SQLException {
+        String cdcSchemaQuery = "create or replace function create_cdc_schema(schemaName text,tableName text)\n" +
+                "returns text as\n" +
+                "$$\n" +
+                "declare schemaValue text := '';\n" +
+                "begin \n" +
+                "\tselect string_agg('\"' || column_name || ':' || split_part(data_type,' ',1) || '\"' ,',') into schemaValue\n" +
+                "\tfrom information_schema.columns\n" +
+                "\twhere table_schema = schemaName and table_name = tableName;\n" +
+                "\treturn '[' || schemaValue || ']';\n" +
+                "end;\n" +
+                "$$ LANGUAGE plpgsql;\n";
+        connection.createStatement().execute(cdcSchemaQuery);
         String cdcDB = String.format("%s_cdc", prefix);
         String cdcTable = "cdc_detail";
         String updateTriggerFunction = sqlUtils.createTriggerFunctionPostgresql(connection, host, port, database, table, 2, cdcDB, cdcTable, username, password);
@@ -185,27 +199,31 @@ public class main {
         String deleteTriggerFunction = sqlUtils.createTriggerFunctionPostgresql(connection, host, port, database, table, 3, cdcDB, cdcTable, username, password);
         //
         connection.createStatement().execute(String.format("DROP TRIGGER IF EXISTS \"%s.%s_%s\" ON  %s;", database, table, "INSERT", table));
-        System.out.println("Finish creating insert trigger !!");
+        System.out.println("Finish dropping insert trigger !!");
         connection.createStatement().execute(String.format("DROP TRIGGER IF EXISTS \"%s.%s_%s\" ON  %s;", database, table, "DELETE", table));
-        System.out.println("Finish creating delete trigger !!");
+        System.out.println("Finish dropping delete trigger !!");
         connection.createStatement().execute(String.format("DROP TRIGGER IF EXISTS \"%s.%s_%s\" ON  %s;", database, table, "UPDATE", table));
+        System.out.println("Finish dropping update trigger !!");
         //
         String triggerTemplate = "" +
                 "CREATE TRIGGER \"%s.%s_%s\" \n" +
                 "  AFTER %s \n" +
                 "  ON %s\n" +
                 "  FOR EACH ROW\n" +
-                "  EXECUTE PROCEDURE \"capture_%s_%s\"()";
+                "  EXECUTE PROCEDURE \"%s_%s_%s_cdc_4912929\"()";
         //
 //        System.out.println("Finish creating updates trigger !!");
-        System.out.println(updateTriggerFunction);
+        System.out.println(insertTriggerFunction);
         connection.createStatement().execute(updateTriggerFunction);
         connection.createStatement().execute(insertTriggerFunction);
         connection.createStatement().execute(deleteTriggerFunction);
+        String schema = table.split("[.]")[0];
+        String tableName = table.split("[.]")[1];
         //
-        connection.createStatement().execute(String.format(triggerTemplate, database, table, "INSERT", "INSERT", table, "INSERT", table));
-        connection.createStatement().execute(String.format(triggerTemplate, database, table, "UPDATE", "UPDATE", table, "UPDATE", table));
-        connection.createStatement().execute(String.format(triggerTemplate, database, table, "DELETE", "DELETE", table, "DELETE", table));
+        System.out.println(String.format("%s.%s", schema, tableName));
+        connection.createStatement().execute(String.format(triggerTemplate, database, table, "INSERT", "INSERT", table, "insert", schema, tableName));
+        connection.createStatement().execute(String.format(triggerTemplate, database, table, "UPDATE", "UPDATE", table, "update", schema, tableName));
+        connection.createStatement().execute(String.format(triggerTemplate, database, table, "DELETE", "DELETE", table, "delete", schema, tableName));
         connection.close();
     }
 
@@ -241,8 +259,8 @@ public class main {
                 "  `database_port` varchar(6) DEFAULT NULL,\n" +
                 "  `database_name` varchar(20) DEFAULT NULL,\n" +
                 "  `table_name` varchar(20) DEFAULT NULL,\n" +
-                "  `schema` varchar(200) DEFAULT NULL,\n" +
-                "  `value` varchar(200) DEFAULT NULL,\n" +
+                "  `schema` mediumtext DEFAULT NULL,\n" +
+                "  `value` longtext DEFAULT NULL,\n" +
                 "  `operation` int DEFAULT NULL,\n" +
                 "  `created` datetime DEFAULT CURRENT_TIMESTAMP,\n" +
                 "  PRIMARY KEY (`id`)\n" +
@@ -298,8 +316,8 @@ public class main {
                 "  database_port varchar(20) DEFAULT NULL,\n" +
                 "  database_name varchar(100) DEFAULT NULL,\n" +
                 "  table_name varchar(100) DEFAULT NULL,\n" +
-                "  schema varchar(800) DEFAULT NULL,\n" +
-                "  value varchar(800) DEFAULT NULL,\n" +
+                "  schema text DEFAULT NULL,\n" +
+                "  value text DEFAULT NULL,\n" +
                 "  operation int DEFAULT NULL,\n" +
                 "  created TIMESTAMP DEFAULT CURRENT_TIMESTAMP \n" +
                 ");";
@@ -342,8 +360,8 @@ public class main {
                 "  database_port varchar(6) DEFAULT NULL,\n" +
                 "  database_name varchar(20) DEFAULT NULL,\n" +
                 "  table_name varchar(20) DEFAULT NULL,\n" +
-                "  schema varchar(200) DEFAULT NULL,\n" +
-                "  value varchar(200) DEFAULT NULL,\n" +
+                "  schema clob DEFAULT NULL,\n" +
+                "  value clob DEFAULT NULL,\n" +
                 "  operation int DEFAULT NULL,\n" +
                 "  created timestamp DEFAULT current_timestamp\n" +
                 ")";

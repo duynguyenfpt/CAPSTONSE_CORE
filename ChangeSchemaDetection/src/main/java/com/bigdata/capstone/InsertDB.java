@@ -1,19 +1,13 @@
-package com.bigdata.ghtk;
+package com.bigdata.capstone;
 
 import utils.SqlUtils;
 import utils.Utils;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import models.AES;
 

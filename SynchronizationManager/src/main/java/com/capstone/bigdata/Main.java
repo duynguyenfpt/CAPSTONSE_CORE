@@ -77,13 +77,14 @@ public class Main {
         System.out.println("DONE INGEST");
 //        // do snapshot
         System.out.println("START SNAPSHOT");
-        String cmd = String.format("spark-submit --master yarn --class SparkWriter --num-executors 1 --executor-cores 2 --executor-memory 512M " +
+        String cmd = String.format("spark-submit --master yarn --class SparkWriter --num-executors 1 --executor-cores 1 --executor-memory 1G " +
                 "--driver-class-path jars/kafka-clients-2.4.1.jar:jars/mysql-connector-java-8.0.25.jar:jars/postgresql-42.2.23.jar:jars/ojdbc8-12.2.0.1.jar " +
                 "--jars jars/mysql-connector-java-8.0.25.jar,jars/ojdbc8-12.2.0.1.jar,jars/postgresql-42.2.23.jar jars/ParquetTest-1.0-SNAPSHOT.jar " +
                 "%s %s %s %s %s %s %s %d %d %s", dbName, tableName, username, password, host, port, partitionBy, jobID, strID, database_type);
         System.out.println(cmd);
-//        runCommand(cmd);
+        runCommand(cmd);
         System.out.println("DONE SNAPSHOT");
+        System.out.println("HIHI");
         // finish snapshot then make join for merge request
         /*
          * if (request comes from merge request):
@@ -91,27 +92,28 @@ public class Main {
          *
          *
          * */
-        PreparedStatement prpStmt = configConnection.prepareStatement("SELECT merge_table_name FROM webservice_test.merge_requests mr\n" +
-                "INNER JOIN  webservice_test.request req\n" +
-                "on mr.request_type_id = req.id\n" +
-                "where request_type_id = ? ");
-        System.out.println("request_type_id is: " + request_id);
-        prpStmt.setInt(1, request_id);
-        ResultSet rs = prpStmt.executeQuery();
-        while (rs.next()) {
-            MergeRequestModel mrm = new MergeRequestModel();
-            mrm.setHost(host);
-            mrm.setPort(port);
-            mrm.setDatabase(dbName);
-            mrm.setTable(tableName);
-            mrm.setDatabaseType(database_type);
-            mrm.setMergeTable(rs.getString("merge_table_name"));
-            mrm.setUsername(username);
-            sqlUtils.mergeRequestProducer("localhost:9092", "merge-request", mrm);
-            break;
-        }
-
         try {
+            PreparedStatement prpStmt = configConnection.prepareStatement("SELECT merge_table_name FROM webservice_test.merge_requests mr\n" +
+                    "INNER JOIN  webservice_test.request req\n" +
+                    "on mr.request_type_id = req.id\n" +
+                    "where request_type_id = ? ");
+            System.out.println("request_type_id is: " + request_id);
+            prpStmt.setInt(1, request_id);
+            ResultSet rs = prpStmt.executeQuery();
+            while (rs.next()) {
+                MergeRequestModel mrm = new MergeRequestModel();
+                mrm.setHost(host);
+                mrm.setPort(port);
+                mrm.setDatabase(dbName);
+                mrm.setTable(tableName);
+                mrm.setDatabaseType(database_type);
+                mrm.setMergeTable(rs.getString("merge_table_name"));
+                mrm.setUsername(username);
+                sqlUtils.mergeRequestProducer("localhost:9092", "merge-request", mrm);
+                break;
+            }
+
+
             sqlUtils.updateIsProcess(configConnection, strID);
             ArrayList<ReadinessModel> listRemains = sqlUtils.checkRemainRequest(configConnection, jobID);
             System.out.println(listRemains.size());

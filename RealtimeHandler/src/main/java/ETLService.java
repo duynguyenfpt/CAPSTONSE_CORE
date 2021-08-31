@@ -59,28 +59,10 @@ public class ETLService implements Serializable {
                 sqlUtils.getConnectionString("localhost", "3306", "cdc",
                         "duynt", "Capstone123@"));
         // get alias and path on hdfs
-        ResultSet rs = getAlias(configConnection);
+
         HashMap<String, String> aliasHashMap = new HashMap<>();
         HashMap<String, String> pathHashMap = new HashMap<>();
-        while (rs.next()) {
-            String path = String.format("/user/%s/%s/%s/%s/%s/", rs.getString("database_type"),
-                    rs.getString("server_host"), rs.getString("port"),
-                    rs.getString("database_name"), rs.getString("table_name"));
-            // set up alias
-            try {
-                String queryAlias = ":" + rs.getString("alias").toLowerCase() + "." +
-                        rs.getString("table_name").toLowerCase() + ":";
-                String alias = "table" + rs.getInt("table_id");
-                // create temp view in spark
-                System.out.println(path);
 
-                System.out.println(String.format("%s alias as: %s - path: %s", queryAlias, alias, path));
-                aliasHashMap.put(queryAlias, alias);
-                pathHashMap.put(alias, path);
-            } catch (Exception exception) {
-                exception.printStackTrace();
-            }
-        }
         System.out.println(aliasHashMap.get(":sales.public.employees:"));
         //
         Dataset<Row> queryDF =
@@ -106,6 +88,26 @@ public class ETLService implements Serializable {
                     @Override
                     public void call(Dataset<Row> dataset, Long aLong) throws Exception {
                         try {
+                            ResultSet rs = getAlias(configConnection);
+                            while (rs.next()) {
+                                String path = String.format("/user/%s/%s/%s/%s/%s/", rs.getString("database_type"),
+                                        rs.getString("server_host"), rs.getString("port"),
+                                        rs.getString("database_name"), rs.getString("table_name"));
+                                // set up alias
+                                try {
+                                    String queryAlias = ":" + rs.getString("alias").toLowerCase() + "." +
+                                            rs.getString("table_name").toLowerCase() + ":";
+                                    String alias = "table" + rs.getInt("table_id");
+                                    // create temp view in spark
+                                    System.out.println(path);
+
+                                    System.out.println(String.format("%s alias as: %s - path: %s", queryAlias, alias, path));
+                                    aliasHashMap.put(queryAlias, alias);
+                                    pathHashMap.put(alias, path);
+                                } catch (Exception exception) {
+                                    exception.printStackTrace();
+                                }
+                            }
                             dataset = dataset
                                     .withColumn("extract", from_json(col("value").cast("string"), querySchema))
                                     .select(col("extract.*"));
@@ -165,6 +167,7 @@ public class ETLService implements Serializable {
                                     String sStackTrace = sw.toString();
                                     //
                                     sStackTrace = sStackTrace.substring(0, Math.min(300, sStackTrace.length()));
+                                    System.out.println(sStackTrace);
                                     System.out.println("update status failed");
                                     String updateQuery = "update webservice_test.jobs set status = 'fail' where id = ?";
                                     PreparedStatement prpStmt = configConnection.prepareStatement(updateQuery);

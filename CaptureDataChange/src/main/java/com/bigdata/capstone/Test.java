@@ -6,17 +6,15 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Test {
     public static void main(String[] args) throws SQLException {
-        String query = "SELECT * FROM cdc_4912929__cdc.cdc_detail";
-        Connection configConnection = sqlUtils.getConnection(sqlUtils.getConnectionString("10.8.0.1", "3306",
-                "cdc", "duynt", "Capstone123@"));
-        Statement stmt = configConnection.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        while (rs.next()){
-            System.out.println(rs.getTimestamp("created").getTime() / 1000);
-        }
+        String format ="%%s";
+        System.out.println(String.format(format,"hihi"));
     }
 }

@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 public class CheckOffsetService {
     public static final String prefix = "cdc_4912929_";
 
-    public static void handle(String host, String port, String username, String password, Connection offsetConnection) throws SQLException {
+    public static void handle(String host, String port, String username, String password, Connection offsetConnection) {
 //        String table = args[5];
         // connect to database cdc of data source
         //
@@ -98,7 +98,11 @@ public class CheckOffsetService {
             exception.printStackTrace();
         } finally {
             if (!Objects.isNull(sourceConnection)) {
-                sourceConnection.close();
+                try {
+                    sourceConnection.close();
+                } catch (SQLException exception) {
+                    exception.printStackTrace();
+                }
             }
         }
     }

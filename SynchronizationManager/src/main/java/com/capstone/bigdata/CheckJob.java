@@ -29,8 +29,8 @@ public class CheckJob {
             @Override
             public void run() {
                 try {
-                    String template = "nohup java -cp jars/SynchronizationManager-1.0-jar-with-dependencies.jar:jars/mysql-connector-java-8.0.25.jar:jars/kafka-clients-2.4.1.jar " +
-                            "com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d %d %s %s %s %s %s %s &";
+                    String template = "java -cp jars/SynchronizationManager-1.0-jar-with-dependencies.jar:jars/mysql-connector-java-8.0.25.jar:jars/kafka-clients-2.4.1.jar " +
+                            "com.capstone.bigdata.Main %s %s %s %s %s %s %s %d %d %d %s %s %s %s %s %s";
                     DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
                     Date date = new Date();
                     System.out.println("START CHECKING REQUEST: " + dateFormat.format(date));
@@ -58,7 +58,7 @@ public class CheckJob {
                             "SELECT null as server_host,null as port,null as username,null as password,null as database_name,null as `table_name`,jobs.id as job_id, \n" +
                             "str.partition_by, str.is_all, str.id as str_id,null as database_type, str.query,req.request_type,null as from_date,null as to_date,req.id as req_id  FROM \n" +
                             "(\n" +
-                            "select null as is_all,id,request_type_id as request_id,null as partition_by,null as table_id, query from webservice_test.etl_request\n" +
+                            "select null as is_all,id,request_type_id as request_id,null as partition_by,null as table_id, query from webservice_test.etl_request where status = 'processing' \n" +
                             ") str \n" +
                             "INNER JOIN\n" +
                             "webservice_test.request as req\n" +

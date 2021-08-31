@@ -227,6 +227,20 @@ public class sqlUtils {
                 port, database, table, gson.toJson(fields), valueDetail, operationType);
     }
 
+    public static String createSchemaFunctionPostgres() {
+        return "create or replace function create_cdc_schema(schemaName text,tableName text)\n" +
+                "returns text as\n" +
+                "$$\n" +
+                "declare schemaValue text := '';\n" +
+                "begin \n" +
+                "\tselect string_agg('\"' || column_name || ':' || split_part(data_type,' ',1) || '\"' ,',') into schemaValue\n" +
+                "\tfrom information_schema.columns\n" +
+                "\twhere table_schema = schemaName and table_name = tableName;\n" +
+                "\treturn '[' || schemaValue || ']';\n" +
+                "end;\n" +
+                "$$ LANGUAGE plpgsql;";
+    }
+
 
     public static String createTriggerFunctionPostgresql(Connection connection, String host, String port, String database,
                                                          String table, int operationType, String cdcDB, String cdcTable, String username, String password) {
@@ -238,48 +252,41 @@ public class sqlUtils {
             operation = "DELETE";
         }
         //
+        String schema = table.split("[.]")[0];
+        String tableName = table.split("[.]")[1];
         //
-        String triggerTemplate = "" +
-                "CREATE OR REPLACE FUNCTION \"capture_%s_%s\"()\n" +
-                "  RETURNS TRIGGER \n" +
-                "  LANGUAGE PLPGSQL\n" +
-                "  AS\n" +
+        String triggerTemplate = "create or replace function %s_%s_%s_cdc_4912929()\n" +
+                "returns trigger as \n" +
                 "$$\n" +
-                "BEGIN\n" +
-                "  perform dblink_connect('connection','hostaddr=%s port=%s dbname=%s user=%s password=%s');\n" +
+                "declare \n" +
+                "\tdatabase_host varchar(20) := '%s';\n" +
+                "\tdatabase_port varchar(10) := '%s';\n" +
+                "\tdatabase_name varchar(10) := '%s';\n" +
+                "    schemaName varchar(20) := '%s';\n" +
+                "\ttableName varchar(100) := '%s';\n" +
+                "\trecordValue text := E'{';\n" +
+                "\toperation int := %d;\n" +
+                "begin \n" +
+                "\tperform dblink_connect('connection','hostaddr=%s port=%s dbname=cdc_4912929__cdc user=%s password=%s');\n" +
                 "\tperform dblink_exec('connection','BEGIN');\n" +
-                "\tperform dblink_exec('connection',E'INSERT INTO public.%s(database_url,database_port,database_name,table_name,schema,value,operation)" +
-                "VALUES(\\'%s\\', \\'%s\\', \\'%s\\', \\'%s\\', \\'%s\\', %s, \\'%d\\');');\n" +
+                "\tif operation < 3 then\n" +
+                "\t\tperform dblink_exec('connection',\n" +
+                "\t\tFORMAT(E'INSERT INTO public.cdc_detail(database_url,database_port,database_name,table_name,schema,value,operation) \n" +
+                "\t\t \tVALUES(\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\')',database_host,database_port,database_name,(schemaName || '.' || tableName ),\n" +
+                "\t\t create_cdc_schema(schemaName,tableName),row_to_json(new),operation));\n" +
+                "\telse \n" +
+                "\t\tperform dblink_exec('connection',\n" +
+                "\t\tFORMAT(E'INSERT INTO public.cdc_detail(database_url,database_port,database_name,table_name,schema,value,operation) \n" +
+                "\t\t \tVALUES(\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\',\\'%%s\\')',database_host,database_port,database_name,(schemaName || '.' || tableName ),\n" +
+                "\t\t create_cdc_schema(schemaName,tableName),row_to_json(old),operation));\n" +
+                "\tend if;\n" +
                 "\tperform dblink_exec('connection','COMMIT');\n" +
                 "\tperform dblink_disconnect('connection');\n" +
                 "\tRETURN NEW;\n" +
-                "END;\n" +
-                "$$";
-        //
-        String valueDetail = "";
-        // convert fields to json
-        ArrayList<String> fields = getListFieldsPostgresql(connection, table);
-        Gson gson = new Gson();
-        valueDetail = "\\'{";
-        //
-        int count = 1;
-        for (String field_value : fields) {
-            String field = field_value.substring(0, field_value.indexOf(":"));
-            if (operationType != 3) {
-                valueDetail += String.format("\"%s\":\"'|| NEW.%s", field, field);
-            } else {
-                valueDetail += String.format("\"%s\":\"'|| OLD.%s", field, field);
-            }
-            if (count < fields.size()) {
-                valueDetail += "|| E'\",";
-            } else {
-                valueDetail += "|| E'\"}\\'";
-            }
-            count++;
-        }
+                "end;\n" +
+                "$$ language plpgsql;";
         ;
-        return String.format(triggerTemplate, operation, table, host, port, cdcDB, username, password, cdcTable, host,
-                port, database, table, gson.toJson(fields), valueDetail, operationType);
+        return String.format(triggerTemplate, operation, schema, tableName, host, port, database, schema, tableName, operationType, host, port, username, password);
     }
 
     public static OffsetModel getOffsets(Connection connection, String host, String port) {
